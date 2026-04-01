@@ -6,7 +6,8 @@
 
 ## 预览
 
-<img width="658" height="318" alt="image" src="https://github.com/user-attachments/assets/ed95051d-cbac-42e7-a05c-6a12b112574f" />
+<img width="3548" height="1834" alt="image" src="https://github.com/user-attachments/assets/3a96c2e8-2892-4967-a2ff-5d514792f226" />
+
 
 
 ## 功能概览
