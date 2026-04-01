@@ -1,5 +1,7 @@
 # buddy-desktop：OpenClaw 一键配置（克隆 / 安装 / 启动 + 孵化）
 
+> **给 OpenClaw 从零跑通**：请先读 **[OPENCLAW_AGENT_RUNBOOK.md](./OPENCLAW_AGENT_RUNBOOK.md)**（含克隆 [openbuddy](https://github.com/chenjunyeee/openbuddy)、构建、写 pending、启动、验收）。本文档为 **pending 格式与文件说明** 的补充参考。
+
 本文档供在本机运行的 **OpenClaw**（或其它自动化代理）按步骤执行，在**不写 UI** 的前提下完成：
 
 1. 安装并启动 buddy-desktop  
@@ -16,10 +18,11 @@ buddy-desktop 所有配置文件都在 **Electron 用户目录** 下（因 OS / 
 **推荐**：安装依赖后在本机执行一次：
 
 ```bash
-cd /path/to/buddy-desktop
+cd /path/to/repo
 npm install
-npm run start:print-paths
+./node_modules/.bin/electron . --buddy-print-paths
 ```
+（stdout 为纯 JSON；勿对 `npm run start:print-paths` 的整段 stdout 直接 `JSON.parse`。）
 
 将打印一段 JSON，例如：
 
@@ -85,17 +88,14 @@ npm run start:print-paths
 以下假设仓库已克隆到 `$REPO`，且本机已有 Node / npm。
 
 ```bash
-# 1) 安装与构建（按需）
-cd "$REPO/buddy-desktop"
+# 1) 安装与构建（按需）— 仓库示例：https://github.com/chenjunyeee/openbuddy
+cd "$REPO/openbuddy"
 npm ci
 npm run build
 
-# 2) 打印路径（只需一次，把终端输出的 JSON 存进 OpenClaw）
-npm run start:print-paths
-
-# 下面用占位变量；请替换为上一步 JSON 里的绝对路径
-export BUDDY_USER_DATA="$HOME/Library/Application Support/buddy-desktop"
-PENDING="$BUDDY_USER_DATA/buddy-bootstrap-pending.json"
+# 2) 打印路径（stdout 仅为 JSON）
+export PATHS_JSON="$(./node_modules/.bin/electron . --buddy-print-paths)"
+PENDING="$(node -e 'console.log(JSON.parse(process.env.PATHS_JSON).bootstrapPending)')"
 
 # 3) 写入 pending（由 OpenClaw 替换环境变量）
 #    OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN / BUDDY_HATCH_USER_ID / BUDDY_DISPLAY_NAME / BUDDY_PERSONALITY
@@ -148,7 +148,7 @@ npm run start:dist
 ## 6. 校验清单
 
 - [ ] `npm run build` 成功  
-- [ ] `npm run start:print-paths` 能打印 JSON  
+- [ ] `./node_modules/.bin/electron . --buddy-print-paths` 能打印可解析的 JSON  
 - [ ] pending 已写入且 JSON 合法  
 - [ ] 启动后 `buddy-openclaw.json` 与 `buddy-profile.json` 存在，`profile.hatchLocked === true`  
 - [ ] 应用内发一句普通消息，能走 OpenClaw 返回回复  
