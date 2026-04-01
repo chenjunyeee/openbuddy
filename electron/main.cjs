@@ -483,6 +483,7 @@ function createWindow() {
     if (isMac) reapplyMacVisibility(mainWindow)
     if (isLinux) mainWindow.setSkipTaskbar(true)
     mainWindow.showInactive()
+    mainWindow.setIgnoreMouseEvents(false)
     setTimeout(() => {
       buddyWindowMovePetAllowed = true
     }, 500)

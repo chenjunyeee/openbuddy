@@ -50,6 +50,42 @@ export const frog = c(0x66, 0x72, 0x6f, 0x67) as 'frog'
 export const seal = c(0x73, 0x65, 0x61, 0x6c) as 'seal'
 export const bee = c(0x62, 0x65, 0x65) as 'bee'
 export const bear = c(0x62, 0x65, 0x61, 0x72) as 'bear'
+export const hamster = c(
+  0x68,
+  0x61,
+  0x6d,
+  0x73,
+  0x74,
+  0x65,
+  0x72,
+) as 'hamster'
+export const dog = c(0x64, 0x6f, 0x67) as 'dog'
+export const koala = c(0x6b, 0x6f, 0x61, 0x6c, 0x61) as 'koala'
+export const sheep = c(0x73, 0x68, 0x65, 0x65, 0x70) as 'sheep'
+export const otter = c(0x6f, 0x74, 0x74, 0x65, 0x72) as 'otter'
+export const jelly = c(0x6a, 0x65, 0x6c, 0x6c, 0x79) as 'jelly'
+export const skull = c(0x73, 0x6b, 0x75, 0x6c, 0x6c) as 'skull'
+export const moon = c(0x6d, 0x6f, 0x6f, 0x6e) as 'moon'
+export const crystal = c(
+  0x63,
+  0x72,
+  0x79,
+  0x73,
+  0x74,
+  0x61,
+  0x6c,
+) as 'crystal'
+export const dice = c(0x64, 0x69, 0x63, 0x65) as 'dice'
+export const voidling = c(
+  0x76,
+  0x6f,
+  0x69,
+  0x64,
+  0x6c,
+  0x69,
+  0x6e,
+  0x67,
+) as 'voidling'
 
 export const SPECIES = [
   duck,
@@ -74,11 +110,30 @@ export const SPECIES = [
   seal,
   bee,
   bear,
+  hamster,
+  dog,
+  koala,
+  sheep,
+  otter,
+  jelly,
   chonk,
+  skull,
+  moon,
+  crystal,
+  dice,
+  voidling,
 ] as const
 export type Species = (typeof SPECIES)[number]
 
-export const EYES = ['·', '✦', '×', '◉', '@', '°'] as const
+/** 开盒 /roll 使用的物种池（不含隐藏种 `voidling`） */
+export const SPECIES_ROLLABLE = SPECIES.filter(
+  (s): s is Exclude<Species, typeof voidling> => s !== voidling,
+)
+
+/** 在 `SPECIES_ROLLABLE` 结果之上额外命中隐藏种；与稀有度 roll 独立 */
+export const SECRET_SPECIES_CHANCE = 0.0025
+
+export const EYES = ['·', '✦', '×', '◉', '@', '°', '◇', '▽', '◕'] as const
 export type Eye = (typeof EYES)[number]
 
 export const HATS = [
@@ -90,8 +145,31 @@ export const HATS = [
   'wizard',
   'beanie',
   'tinyduck',
+  'headphones',
+  'beret',
+  'antenna',
+  'heartpin',
+  'sprout',
+  'bowhat',
+  'visor',
 ] as const
 export type Hat = (typeof HATS)[number]
+
+/** 帽子独立稀有度：`astral` 为极低概率的幻彩帽（渐变 + 特效，与宠物本体稀有度分开 roll） */
+export const HAT_RARITIES = ['standard', 'astral'] as const
+export type HatRarity = (typeof HAT_RARITIES)[number]
+
+/** 随宠物稀有度提高 astral 帽概率（common 无帽，此处仅非常规档） */
+export const HAT_ASTRAL_CHANCE: Record<Exclude<Rarity, 'common'>, number> = {
+  uncommon: 0.01,
+  rare: 0.02,
+  epic: 0.04,
+  legendary: 0.075,
+}
+
+/** 脚底装饰已移除（原围巾/蝴蝶结等不再 roll）；字段保留为 `'none'` 以兼容结构 */
+export const CHARMS = ['none'] as const
+export type Charm = (typeof CHARMS)[number]
 
 export const STAT_NAMES = [
   'DEBUGGING',
@@ -116,6 +194,8 @@ export type CompanionBones = {
   species: Species
   eye: Eye
   hat: Hat
+  hatRarity: HatRarity
+  charm: Charm
   shiny: boolean
   stats: Record<StatName, number>
 }

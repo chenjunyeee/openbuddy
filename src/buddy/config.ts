@@ -1,5 +1,8 @@
 import type { Rarity, StoredCompanion } from './types.js'
 
+/** /test 下 /high、/low 调节稀有度、隐藏种、异色等概率 */
+export type TestLuck = 'low' | 'normal' | 'high'
+
 /** Standalone mock of Claude Code global config — only what `buddy` needs. */
 export type BuddyGlobalConfig = {
   userID?: string
@@ -11,6 +14,8 @@ export type BuddyGlobalConfig = {
   testForcedRarity?: Rarity
   /** 每次刷新外形递增，避免 roll 缓存挡住随机 */
   testRollNonce?: string
+  /** 仅 testMode：/high、/low；缺省按 normal */
+  testLuck?: TestLuck
 }
 
 let config: BuddyGlobalConfig = {

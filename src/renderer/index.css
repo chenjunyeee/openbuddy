@@ -79,12 +79,12 @@ body {
   max-width: 100%;
 }
 
-/* 统一浅色卡片（桌宠气泡 + 对话框） */
+/* 统一浅色卡片（桌宠气泡 + 对话框）；无投影避免透明窗上的「泛光」感 */
 .surface-card {
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid rgba(20, 20, 24, 0.12);
   border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: none;
 }
 
 .pet-row-outer {
@@ -128,8 +128,291 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* 精灵外包：顶栏背后云朵 + 下方 ASCII；开盒/ shiny / 稀有光仅作用内层，云朵独立生命周期 */
+.pet-sprite-stage {
+  -webkit-app-region: drag;
+  display: inline-block;
+  position: relative;
+  padding-top: 46px;
+}
+
+.pet-sprite-sprite-wrap {
+  display: inline-block;
+  position: relative;
+  z-index: 1;
+  transform-origin: 50% 70%;
+  -webkit-app-region: drag;
+}
+
+/* 云朵在精灵（pre）背后；整带水平居中，叠在精灵正上方 */
+.pet-sprite-clouds {
+  --pet-cloud-core: rgba(252, 253, 255, 0.96);
+  --pet-cloud-edge: rgba(218, 224, 235, 0.52);
+  --pet-cloud-wisp: rgba(255, 255, 255, 0.55);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 44px;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding-bottom: 2px;
+}
+
+/* 夜间：压低高光、偏冷灰雾，避免亮白团块贴在深色壳上（气泡阴影见 .pet-sprite-bubble 段落后覆盖） */
+.shell.shell--palette-night .pet-sprite-clouds {
+  --pet-cloud-core: rgba(145, 158, 182, 0.2);
+  --pet-cloud-edge: rgba(62, 72, 92, 0.5);
+  --pet-cloud-wisp: rgba(180, 188, 205, 0.06);
+}
+
+/* 整层缓慢横移 — 飘感主要来自这一层 */
+.pet-sprite-clouds-band {
+  position: relative;
+  width: 132px;
+  height: 36px;
+  animation: pet-cloud-band-sway 9s ease-in-out infinite;
+}
+
+/* 三簇云：相对 band 定位，各自再上下去动 */
+.pet-sprite-cluster {
+  position: absolute;
+  bottom: 0;
+  width: 52px;
+  height: 28px;
+  pointer-events: none;
+}
+
+.pet-sprite-cluster--a {
+  left: -8px;
+  animation: pet-cloud-cluster-bob 4.2s ease-in-out infinite;
+}
+.pet-sprite-cluster--b {
+  left: 38px;
+  animation: pet-cloud-cluster-bob 5.6s ease-in-out infinite;
+  animation-delay: -1.8s;
+}
+.pet-sprite-cluster--c {
+  left: 88px;
+  width: 40px;
+  animation: pet-cloud-cluster-bob 3.9s ease-in-out infinite;
+  animation-delay: -0.9s;
+}
+
+.pet-sprite-bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse 100% 90% at 40% 35%,
+    var(--pet-cloud-core) 0%,
+    var(--pet-cloud-edge) 72%,
+    transparent 100%
+  );
+  box-shadow:
+    inset 0 -1px 2px var(--pet-cloud-wisp),
+    0 1px 4px rgba(160, 170, 190, 0.08);
+  filter: blur(0.35px);
+}
+
+/* 夜间：覆写浅色外发光为轻量暗晕，与深色壳融合 */
+.shell.shell--palette-night .pet-sprite-clouds .pet-sprite-bubble {
+  box-shadow:
+    inset 0 -1px 2px var(--pet-cloud-wisp),
+    0 2px 7px rgba(0, 0, 0, 0.4);
+  filter: blur(0.55px);
+}
+
+/* 簇 A */
+.pet-sprite-bubble--a1 {
+  width: 26px;
+  height: 18px;
+  left: 4px;
+  bottom: 2px;
+  opacity: 0.88;
+}
+.pet-sprite-bubble--a2 {
+  width: 20px;
+  height: 15px;
+  left: 22px;
+  bottom: 6px;
+  opacity: 0.82;
+}
+.pet-sprite-bubble--a3 {
+  width: 14px;
+  height: 11px;
+  left: 14px;
+  bottom: 12px;
+  opacity: 0.72;
+}
+
+/* 簇 B（中间主云） */
+.pet-sprite-bubble--b1 {
+  width: 30px;
+  height: 20px;
+  left: 2px;
+  bottom: 0;
+  opacity: 0.9;
+}
+.pet-sprite-bubble--b2 {
+  width: 22px;
+  height: 16px;
+  left: 24px;
+  bottom: 5px;
+  opacity: 0.78;
+}
+.pet-sprite-bubble--b3 {
+  width: 16px;
+  height: 12px;
+  left: 12px;
+  bottom: 14px;
+  opacity: 0.7;
+}
+
+/* 簇 C */
+.pet-sprite-bubble--c1 {
+  width: 22px;
+  height: 15px;
+  left: 2px;
+  bottom: 3px;
+  opacity: 0.75;
+}
+.pet-sprite-bubble--c2 {
+  width: 17px;
+  height: 13px;
+  left: 14px;
+  bottom: 11px;
+  opacity: 0.65;
+}
+
+@keyframes pet-cloud-band-sway {
+  0%,
+  100% {
+    transform: translate3d(-18px, 1px, 0);
+  }
+  50% {
+    transform: translate3d(18px, -3px, 0);
+  }
+}
+
+@keyframes pet-cloud-cluster-bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+.pet-sprite-sprite-wrap--gacha {
+  animation: pet-gacha-pop 1s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+
+/* Epic / Legendary：仅精灵身体 ASCII 行极淡同色晕（无整身 filter、无额外 UI） */
+.pet-sprite-sprite-wrap--epic .sprite-pre-line--pet,
+.pet-sprite-sprite-wrap--legendary .sprite-pre-line--pet {
+  text-shadow:
+    0 0 1px color-mix(in srgb, currentColor 28%, transparent),
+    0 0 6px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* 异色：身体行上叠极淡金晕，不做整段动画 */
+.pet-sprite-sprite-wrap--shiny.pet-sprite-sprite-wrap--epic .sprite-pre-line--pet,
+.pet-sprite-sprite-wrap--shiny.pet-sprite-sprite-wrap--legendary .sprite-pre-line--pet {
+  text-shadow:
+    0 0 1px color-mix(in srgb, currentColor 26%, transparent),
+    0 0 6px color-mix(in srgb, currentColor 16%, transparent),
+    0 0 10px rgba(180, 130, 40, 0.09);
+}
+
+.pet-sprite-sprite-wrap--shiny:not(.pet-sprite-sprite-wrap--epic):not(.pet-sprite-sprite-wrap--legendary)
+  .sprite-pre-line--pet {
+  text-shadow:
+    0 0 1px color-mix(in srgb, currentColor 22%, transparent),
+    0 0 8px color-mix(in srgb, currentColor 12%, transparent),
+    0 0 10px rgba(180, 130, 40, 0.09);
+}
+
+/* 幻彩帽（hatRarity: astral）：仅帽行渐变 + 光晕，无整圈外阴影 */
+.sprite-pre-hat-astral {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none !important;
+  background-image: linear-gradient(
+    105deg,
+    #f472b6 0%,
+    #c026d3 14%,
+    #7c3aed 30%,
+    #0891b2 50%,
+    #ca8a04 68%,
+    #db2777 84%,
+    #f472b6 100%
+  );
+  background-size: 280% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation:
+    pet-hat-astral-flow 3.8s linear infinite,
+    pet-hat-astral-flare 2.2s ease-in-out infinite;
+}
+
+.shell.shell--palette-night .sprite-pre-hat-astral {
+  background-image: linear-gradient(
+    105deg,
+    #fdf2f8 0%,
+    #e9d5ff 15%,
+    #a5f3fc 36%,
+    #fde68a 56%,
+    #fbcfe8 76%,
+    #fdf2f8 100%
+  );
+}
+
+@keyframes pet-hat-astral-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes pet-hat-astral-flare {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 3px rgba(192, 38, 211, 0.85));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(8, 145, 178, 0.95));
+  }
+}
+
+@keyframes pet-gacha-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(-4deg);
+    filter: blur(3px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.06) rotate(1deg);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: blur(0);
+  }
+}
+
 /* 仅 ASCII 精灵块可拖移无边框窗；抚摸由主进程 `move` IPC（见 preload subscribeWindowMoved） */
 .sprite-pre {
+  position: relative;
+  z-index: 1;
   color: #0f0f12;
   /* 避免大白边 text-shadow 在透明背景上帧切换时看起来像「白色拖尾」 */
   text-shadow: 0 0 1px rgba(255, 255, 255, 0.65);
@@ -141,6 +424,8 @@ body {
   font-size: 13px;
   line-height: 1.15;
   font-weight: 400;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* 名字在 pre 最末行：块级 + 居中，对齐精灵外接宽度（避免相对有缩进的 ASCII 显得偏左） */
@@ -156,6 +441,8 @@ body {
 /* 部分 WebKit 下需让 pre 内子节点显式参与 drag，否则仅空白处可拖 */
 .sprite-pre * {
   -webkit-app-region: drag;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* 桌宠旁气泡（非 anchored 时仍用 relative，便于尾翼定位） */
@@ -245,7 +532,6 @@ body {
   border-top: 5px solid transparent;
   border-bottom: 5px solid transparent;
   border-left: 5px solid rgba(255, 255, 255, 0.78);
-  filter: drop-shadow(1px 0 0 rgba(20, 20, 24, 0.08));
 }
 
 /* 桌宠右下：极简一块输入，无发送按钮（Enter 发送、Shift+Enter 换行） */
@@ -300,9 +586,7 @@ body {
 .shell.shell--palette-night .surface-card {
   background: rgba(34, 34, 40, 0.9);
   border-color: rgba(255, 255, 255, 0.14);
-  box-shadow:
-    0 2px 14px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  box-shadow: none;
 }
 
 .shell.shell--palette-night .sprite-pre {
@@ -328,7 +612,6 @@ body {
 
 .shell.shell--palette-night .pet-chat-bubble-tail {
   border-left-color: rgba(34, 34, 40, 0.9);
-  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, 0.06));
 }
 
 .shell.shell--palette-night .chat-dialog-input {

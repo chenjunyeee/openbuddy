@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { getCompanion } from '@buddy/companion.js'
-import { renderSprite, spriteFrameCount } from '@buddy/sprites.js'
+import { renderSpriteWithMeta, spriteFrameCount } from '@buddy/sprites.js'
 import {
   BUDDY_HEART_RGB_DARK,
   BUDDY_HEART_RGB_LIGHT,
@@ -12,8 +12,9 @@ import { useAppState, useSetAppState } from './BuddyState'
 const TICK_MS = 500
 const PET_BURST_MS = 2500
 
+/** 含眨眼：-1 仅替换 `{E}`；连续两拍便于看清（@500ms/tick ≈1s 闭眼） */
 const IDLE_SEQUENCE = [
-  0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 2, 0, 0, 0,
+  0, 0, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0, 2, 0, 0, 0,
 ]
 
 /** 装饰行：对 `SPECIES` 中任意种族共用，不分支 species。 */
@@ -115,6 +116,45 @@ function PetBubble({
   )
 }
 
+/** 用于外形变化时触发一次短促「开盒」动效（不测缓存对象，只测 roll 结果字段） */
+function companionAppearanceKey(c: {
+  species: string
+  eye: string
+  hat: string
+  hatRarity: string
+  charm: string
+  rarity: string
+  shiny: boolean
+}): string {
+  return `${c.species}:${c.eye}:${c.hat}:${c.hatRarity}:${c.charm}:${c.rarity}:${c.shiny ? 1 : 0}`
+}
+
+/**
+ * 背景柔边小云：径向渐变 + 椭圆叠层，纯 CSS 飘动（整层横移 + 单泡上下），与精灵 tick 无关。
+ */
+function PetSpriteClouds(): React.ReactElement {
+  return (
+    <div className="pet-sprite-clouds" aria-hidden>
+      <div className="pet-sprite-clouds-band">
+        <div className="pet-sprite-cluster pet-sprite-cluster--a">
+          <span className="pet-sprite-bubble pet-sprite-bubble--a1" />
+          <span className="pet-sprite-bubble pet-sprite-bubble--a2" />
+          <span className="pet-sprite-bubble pet-sprite-bubble--a3" />
+        </div>
+        <div className="pet-sprite-cluster pet-sprite-cluster--b">
+          <span className="pet-sprite-bubble pet-sprite-bubble--b1" />
+          <span className="pet-sprite-bubble pet-sprite-bubble--b2" />
+          <span className="pet-sprite-bubble pet-sprite-bubble--b3" />
+        </div>
+        <div className="pet-sprite-cluster pet-sprite-cluster--c">
+          <span className="pet-sprite-bubble pet-sprite-bubble--c1" />
+          <span className="pet-sprite-bubble pet-sprite-bubble--c2" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PetView(): React.ReactElement {
   const setAppState = useSetAppState()
   const petAt = useAppState(s => s.companionPetAt)
@@ -122,6 +162,8 @@ export function PetView(): React.ReactElement {
   const chatBubble = useAppState(s => s.chatBubble)
   const prevChatLoading = useRef(false)
   const replyBurstUntil = useRef(0)
+  const appearancePrev = useRef<string | null>(null)
+  const [gachaReveal, setGachaReveal] = useState(false)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -164,10 +206,33 @@ export function PetView(): React.ReactElement {
     )
   }
 
+  const appearanceKey = companionAppearanceKey(companion)
+  useEffect(() => {
+    const first = appearancePrev.current === null
+    const changed =
+      appearancePrev.current !== null && appearancePrev.current !== appearanceKey
+    appearancePrev.current = appearanceKey
+    if (!first && !changed) return
+    setGachaReveal(true)
+    const t = window.setTimeout(() => setGachaReveal(false), 1100)
+    return () => window.clearTimeout(t)
+  }, [appearanceKey])
+
   const heartInk = darkPalette ? BUDDY_HEART_RGB_DARK : BUDDY_HEART_RGB_LIGHT
   const rarityInk = darkPalette
     ? BUDDY_RARITY_RGB_DARK[companion.rarity]
     : BUDDY_RARITY_RGB_LIGHT[companion.rarity]
+  const spriteWrapClassNames = [
+    'pet-sprite-sprite-wrap',
+    gachaReveal ? 'pet-sprite-sprite-wrap--gacha' : '',
+    companion.shiny ? 'pet-sprite-sprite-wrap--shiny' : '',
+    companion.rarity === 'epic' ? 'pet-sprite-sprite-wrap--epic' : '',
+    companion.rarity === 'legendary'
+      ? 'pet-sprite-sprite-wrap--legendary'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   /** 拖窗会高频刷新 `companionPetAt`，不得再绑「渲染里 reset petStartTick」否则 petAge 归零、爱心与精灵会闪 */
   const petting =
     petAt != null && Date.now() - petAt < PET_BURST_MS
@@ -209,9 +274,12 @@ export function PetView(): React.ReactElement {
     }
   }
 
-  const bodyLines = renderSprite(companion, spriteFrame).map(line =>
-    blink ? line.replaceAll(companion.eye, '-') : line,
+  const { lines: spriteMetaLines, hatLineIndex } = renderSpriteWithMeta(
+    companion,
+    spriteFrame,
+    blink,
   )
+  const bodyLines = spriteMetaLines
 
   const moodPrefix: string[] = []
   if (petMood === 'sleep' && !chatLoading) {
@@ -221,6 +289,13 @@ export function PetView(): React.ReactElement {
   }
 
   const spriteLines = [...moodPrefix, heartLineText, ...bodyLines]
+  const bodyStartIdx = moodPrefix.length + 1
+  const astralHatSpriteIdx =
+    companion.hatRarity === 'astral' &&
+    companion.hat !== 'none' &&
+    hatLineIndex != null
+      ? bodyStartIdx + hatLineIndex
+      : null
 
   const showBubble =
     Boolean(chatLoading) || Boolean(chatBubble != null && chatBubble.trim())
@@ -231,42 +306,61 @@ export function PetView(): React.ReactElement {
         {showBubble ? (
           <PetBubble loading={Boolean(chatLoading)} text={chatBubble} />
         ) : null}
-        <pre
-          className="sprite-pre"
-          title="仅精灵区域可拖移窗口（抚摸）"
-        >
-          {spriteLines.map((line, i) => {
-            const moodLines = moodPrefix.length
-            const heartIdx = moodLines
-            const isHeartRow = i === heartIdx
-            const isMoodRow = i < moodLines
-            return (
-              <React.Fragment key={i}>
-                {i > 0 ? '\n' : null}
-                <span
-                  style={{
-                    color: isHeartRow && petting ? heartInk : rarityInk,
-                    opacity:
-                      isHeartRow && !petting
-                        ? 0
-                        : isMoodRow
-                          ? 0.92
-                          : 1,
-                  }}
-                >
-                  {line}
-                </span>
-              </React.Fragment>
-            )
-          })}
-          {'\n'}
-          <span
-            className="sprite-pre-name"
-            style={{ color: rarityInk }}
-          >
-            {companion.name}
-          </span>
-        </pre>
+        <div className="pet-sprite-stage">
+          <PetSpriteClouds />
+          <div className={spriteWrapClassNames}>
+            <pre
+              className="sprite-pre"
+              title="仅精灵区域可拖移窗口（抚摸）"
+            >
+              {spriteLines.map((line, i) => {
+                const moodLines = moodPrefix.length
+                const heartIdx = moodLines
+                const isHeartRow = i === heartIdx
+                const isMoodRow = i < moodLines
+                const isAstralHatRow =
+                  astralHatSpriteIdx != null && i === astralHatSpriteIdx
+                const isPetLine = i > heartIdx && !isAstralHatRow
+                const lineClass = [
+                  isAstralHatRow ? 'sprite-pre-hat-astral' : null,
+                  isPetLine ? 'sprite-pre-line--pet' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+                return (
+                  <React.Fragment key={i}>
+                    {i > 0 ? '\n' : null}
+                    <span
+                      className={lineClass || undefined}
+                      style={
+                        isAstralHatRow
+                          ? undefined
+                          : {
+                              color: isHeartRow && petting ? heartInk : rarityInk,
+                              opacity:
+                                isHeartRow && !petting
+                                  ? 0
+                                  : isMoodRow
+                                    ? 0.92
+                                    : 1,
+                            }
+                      }
+                    >
+                      {line}
+                    </span>
+                  </React.Fragment>
+                )
+              })}
+              {'\n'}
+              <span
+                className="sprite-pre-name"
+                style={{ color: rarityInk }}
+              >
+                {companion.name}
+              </span>
+            </pre>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -1,14 +1,19 @@
-import { getGlobalConfig } from './config.js'
+import { getGlobalConfig, type TestLuck } from './config.js'
 import {
   type Companion,
   type CompanionBones,
   EYES,
+  HAT_ASTRAL_CHANCE,
+  type Hat,
+  type HatRarity,
   HATS,
   RARITIES,
   RARITY_WEIGHTS,
   type Rarity,
-  SPECIES,
+  SECRET_SPECIES_CHANCE,
+  SPECIES_ROLLABLE,
   STAT_NAMES,
+  voidling,
   type StatName,
 } from './types.js'
 
@@ -36,11 +41,56 @@ function pick<T>(rng: () => number, arr: readonly T[]): T {
   return arr[Math.floor(rng() * arr.length)]!
 }
 
+/** 测试模式「欧气」：抬高/压低高稀有与隐藏、异色权重 */
+const RARITY_WEIGHTS_TEST_HIGH = {
+  common: 45,
+  uncommon: 28,
+  rare: 15,
+  epic: 8,
+  legendary: 4,
+} as const satisfies Record<Rarity, number>
+
+const RARITY_WEIGHTS_TEST_LOW = {
+  common: 72,
+  uncommon: 18,
+  rare: 7,
+  epic: 2,
+  legendary: 1,
+} as const satisfies Record<Rarity, number>
+
+function activeTestLuck(): TestLuck | undefined {
+  const cfg = getGlobalConfig()
+  if (!cfg.testMode) return undefined
+  return cfg.testLuck ?? 'normal'
+}
+
+function rarityWeightsForRoll(): Record<Rarity, number> {
+  const luck = activeTestLuck()
+  if (luck === 'high') return RARITY_WEIGHTS_TEST_HIGH
+  if (luck === 'low') return RARITY_WEIGHTS_TEST_LOW
+  return RARITY_WEIGHTS
+}
+
+function secretSpeciesChanceForRoll(): number {
+  const luck = activeTestLuck()
+  if (luck === 'high') return Math.min(0.06, SECRET_SPECIES_CHANCE * 12)
+  if (luck === 'low') return SECRET_SPECIES_CHANCE * 0.25
+  return SECRET_SPECIES_CHANCE
+}
+
+function shinyChanceForRoll(): number {
+  const luck = activeTestLuck()
+  if (luck === 'high') return 0.08
+  if (luck === 'low') return 0.0025
+  return 0.01
+}
+
 function rollRarity(rng: () => number): Rarity {
-  const total = Object.values(RARITY_WEIGHTS).reduce((a, b) => a + b, 0)
+  const weights = rarityWeightsForRoll()
+  const total = Object.values(weights).reduce((a, b) => a + b, 0)
   let roll = rng() * total
   for (const rarity of RARITIES) {
-    roll -= RARITY_WEIGHTS[rarity]
+    roll -= weights[rarity]
     if (roll < 0) return rarity
   }
   return 'common'
@@ -52,6 +102,16 @@ const RARITY_FLOOR: Record<Rarity, number> = {
   rare: 25,
   epic: 35,
   legendary: 50,
+}
+
+function rollHatRarity(
+  rng: () => number,
+  petRarity: Rarity,
+  hat: Hat,
+): HatRarity {
+  if (hat === 'none' || petRarity === 'common') return 'standard'
+  const p = HAT_ASTRAL_CHANCE[petRarity]
+  return rng() < p ? 'astral' : 'standard'
 }
 
 function rollStats(
@@ -85,24 +145,35 @@ export type Roll = {
 
 function rollFrom(rng: () => number): Roll {
   const rarity = rollRarity(rng)
+  const hat = rarity === 'common' ? 'none' : pick(rng, HATS)
+  let species = pick(rng, SPECIES_ROLLABLE)
+  // 与 rollRarity 独立：极低概率覆盖为隐藏种 voidling（/high /low 在测试模式下调节）
+  if (rng() < secretSpeciesChanceForRoll()) species = voidling
   const bones: CompanionBones = {
     rarity,
-    species: pick(rng, SPECIES),
+    species,
     eye: pick(rng, EYES),
-    hat: rarity === 'common' ? 'none' : pick(rng, HATS),
-    shiny: rng() < 0.01,
+    hat,
+    hatRarity: rollHatRarity(rng, rarity, hat),
+    charm: 'none',
+    shiny: rng() < shinyChanceForRoll(),
     stats: rollStats(rng, rarity),
   }
   return { bones, inspirationSeed: Math.floor(rng() * 1e9) }
 }
 
 function rollFromForcedRarity(rng: () => number, rarity: Rarity): Roll {
+  const hat = rarity === 'common' ? 'none' : pick(rng, HATS)
+  let species = pick(rng, SPECIES_ROLLABLE)
+  if (rng() < secretSpeciesChanceForRoll()) species = voidling
   const bones: CompanionBones = {
     rarity,
-    species: pick(rng, SPECIES),
+    species,
     eye: pick(rng, EYES),
-    hat: rarity === 'common' ? 'none' : pick(rng, HATS),
-    shiny: rng() < 0.01,
+    hat,
+    hatRarity: rollHatRarity(rng, rarity, hat),
+    charm: 'none',
+    shiny: rng() < shinyChanceForRoll(),
     stats: rollStats(rng, rarity),
   }
   return { bones, inspirationSeed: Math.floor(rng() * 1e9) }

@@ -7,12 +7,18 @@ import React, {
   useState,
 } from 'react'
 import { getGlobalConfig, setGlobalConfig } from '@buddy/config.js'
-import { clearRollCache } from '@buddy/companion.js'
+import {
+  clearRollCache,
+  companionUserId,
+  roll,
+} from '@buddy/companion.js'
 import {
   RARITIES,
   type BuddyAppState,
+  type CompanionBones,
   type Rarity,
   type ShellAppearance,
+  voidling,
 } from '@buddy/types.js'
 import {
   BuddyStateProvider,
@@ -50,6 +56,25 @@ function parseTestRaritySlash(t: string): Rarity | null {
   return (RARITIES as readonly string[]).includes(token) ? (token as Rarity) : null
 }
 
+const RARITY_ZH: Record<Rarity, string> = {
+  common: '常见',
+  uncommon: '少见',
+  rare: '稀有',
+  epic: '史诗',
+  legendary: '传说',
+}
+
+function formatTestRollBubble(bones: CompanionBones): string {
+  const sp =
+    bones.species === voidling
+      ? `${bones.species}（隐藏种）`
+      : bones.species
+  const parts = [RARITY_ZH[bones.rarity], sp]
+  if (bones.shiny) parts.push('异色')
+  if (bones.hat !== 'none') parts.push(`帽子·${bones.hat}`)
+  return `抽到了：${parts.join(' · ')}`
+}
+
 /** 「在想中」时输入框仅允许键入本地快捷指令的前缀或完整内容 */
 function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
@@ -60,6 +85,9 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   const slashed = [
     '/test off',
     '/test',
+    '/roll',
+    '/high',
+    '/low',
     '/common',
     '/uncommon',
     '/rare',
@@ -258,11 +286,12 @@ function ChatDialogPanel(): React.ReactElement {
         testMode: false,
         testForcedRarity: undefined,
         testRollNonce: undefined,
+        testLuck: undefined,
       })
       setAppState(s => ({
         ...s,
         testMode: false,
-        chatBubble: undefined,
+        chatBubble: '已退出测试模式。',
       }))
       return
     }
@@ -272,12 +301,75 @@ function ChatDialogPanel(): React.ReactElement {
       setGlobalConfig({
         testMode: true,
         testForcedRarity: undefined,
+        testLuck: 'normal',
         testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       })
       setAppState(s => ({
         ...s,
         testMode: true,
-        chatBubble: undefined,
+        chatBubble:
+          '测试模式：发 /roll 随机抽外形（不换存档）。/high 提高稀有、隐藏种、异色概率；/low 降低。/common～/legendary 可固定稀有度再 roll。/test off 退出。',
+      }))
+      return
+    }
+
+    if (low === '/roll' || low.startsWith('/roll ')) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        setAppState(s => ({
+          ...s,
+          chatBubble: '请先发 /test 进入测试模式，再用 /roll 体验抽取。',
+        }))
+        return
+      }
+      setDraft('')
+      clearRollCache()
+      setGlobalConfig({
+        testForcedRarity: undefined,
+        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      })
+      const { bones } = roll(companionUserId())
+      setAppState(s => ({
+        ...s,
+        chatBubble: formatTestRollBubble(bones),
+      }))
+      return
+    }
+
+    if (low === '/high' || low.startsWith('/high ')) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        setAppState(s => ({
+          ...s,
+          chatBubble: '请先发 /test，再用 /high 拉高中奖率。',
+        }))
+        return
+      }
+      setDraft('')
+      setGlobalConfig({ testLuck: 'high' })
+      setAppState(s => ({
+        ...s,
+        chatBubble:
+          '欧气已调高：更高稀有、隐藏种 voidling、异色更容易出现。发 /roll 试试。',
+      }))
+      return
+    }
+
+    if (low === '/low' || low.startsWith('/low ')) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        setAppState(s => ({
+          ...s,
+          chatBubble: '请先发 /test，再用 /low 压低中奖率。',
+        }))
+        return
+      }
+      setDraft('')
+      setGlobalConfig({ testLuck: 'low' })
+      setAppState(s => ({
+        ...s,
+        chatBubble:
+          '欧气已调低：稀有与隐藏、异色更难出。发 /roll 试试，/high 可恢复。',
       }))
       return
     }
@@ -296,7 +388,7 @@ function ChatDialogPanel(): React.ReactElement {
       })
       setAppState(s => ({
         ...s,
-        chatBubble: `已按 ${raritySlash} 随机外形。`,
+        chatBubble: `已按 ${raritySlash}（${RARITY_ZH[raritySlash]}）随机外形；仍可发 /roll 继续抽。`,
       }))
       return
     }
@@ -411,11 +503,12 @@ function ChatDialogPanel(): React.ReactElement {
   const inputPlaceholder = useMemo((): string => {
     const tail = ' · /c（夜/浅色框/深色框）'
     if (chatLoading) return '在想中：仅可 /c'
+    if (testMode) return `测试：/roll · /high /low · /test off${tail}`
     if (openclawConfigured) return `Enter 发送${tail}`
     if (typeof openclawGuideStep === 'number')
       return `引导中：留空 Enter 下一步${tail}`
     return `Enter 发送${tail}`
-  }, [chatLoading, openclawConfigured, openclawGuideStep])
+  }, [chatLoading, openclawConfigured, openclawGuideStep, testMode])
 
   const onDraftChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
