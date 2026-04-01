@@ -96,12 +96,30 @@ function rollFrom(rng: () => number): Roll {
   return { bones, inspirationSeed: Math.floor(rng() * 1e9) }
 }
 
+function rollFromForcedRarity(rng: () => number, rarity: Rarity): Roll {
+  const bones: CompanionBones = {
+    rarity,
+    species: pick(rng, SPECIES),
+    eye: pick(rng, EYES),
+    hat: rarity === 'common' ? 'none' : pick(rng, HATS),
+    shiny: rng() < 0.01,
+    stats: rollStats(rng, rarity),
+  }
+  return { bones, inspirationSeed: Math.floor(rng() * 1e9) }
+}
+
 let rollCache: { key: string; value: Roll } | undefined
 
 export function roll(userId: string): Roll {
-  const key = userId + SALT
+  const cfg = getGlobalConfig()
+  const nonce = cfg.testMode && cfg.testRollNonce ? cfg.testRollNonce : ''
+  const key = userId + SALT + nonce
   if (rollCache?.key === key) return rollCache.value
-  const value = rollFrom(mulberry32(hashString(key)))
+  const rng = mulberry32(hashString(key))
+  const value =
+    cfg.testMode && cfg.testForcedRarity
+      ? rollFromForcedRarity(rng, cfg.testForcedRarity)
+      : rollFrom(rng)
   rollCache = { key, value }
   return value
 }

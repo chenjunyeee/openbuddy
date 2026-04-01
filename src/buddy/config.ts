@@ -1,4 +1,4 @@
-import type { StoredCompanion } from './types.js'
+import type { Rarity, StoredCompanion } from './types.js'
 
 /** Standalone mock of Claude Code global config — only what `buddy` needs. */
 export type BuddyGlobalConfig = {
@@ -6,6 +6,11 @@ export type BuddyGlobalConfig = {
   oauthAccount?: { accountUuid?: string }
   companion?: StoredCompanion
   companionMuted?: boolean
+  /** 输入框 /test：按稀有度刷外形时由 companion.roll 读取 */
+  testMode?: boolean
+  testForcedRarity?: Rarity
+  /** 每次刷新外形递增，避免 roll 缓存挡住随机 */
+  testRollNonce?: string
 }
 
 let config: BuddyGlobalConfig = {

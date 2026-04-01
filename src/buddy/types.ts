@@ -162,6 +162,8 @@ export const BUDDY_HEART_RGB_DARK = '#af87ff'
 
 export type BuddyAppState = {
   companionPetAt?: number
+  /** 与 global testMode 同步：占位符与加载中输入白名单 */
+  testMode?: boolean
   /** 桌宠旁气泡：Claude 回复或正在请求 */
   chatLoading?: boolean
   chatBubble?: string

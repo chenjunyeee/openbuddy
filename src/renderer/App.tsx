@@ -6,7 +6,9 @@ import React, {
   useRef,
   useState,
 } from 'react'
-import { getGlobalConfig } from '@buddy/config.js'
+import { getGlobalConfig, setGlobalConfig } from '@buddy/config.js'
+import { clearRollCache } from '@buddy/companion.js'
+import { RARITIES, type Rarity } from '@buddy/types.js'
 import {
   BuddyStateProvider,
   useAppState,
@@ -30,11 +32,38 @@ function isSlashNight(t: string): boolean {
   return t === '/c' || t.startsWith('/c ')
 }
 
+function parseTestRaritySlash(t: string): Rarity | null {
+  const s = t.trim().toLowerCase()
+  if (!s.startsWith('/')) return null
+  const token = s.split(/\s+/u)[0]!.slice(1)
+  return (RARITIES as readonly string[]).includes(token) ? (token as Rarity) : null
+}
+
 /** 「在想中」时输入框仅允许键入本地快捷指令的前缀或完整内容 */
-function isAllowedPetShortcutDraft(v: string): boolean {
+function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
   if (v === '/') return true
-  return /^\/[mc](\s.*)?$/i.test(v)
+  if (/^\/[mc](\s.*)?$/i.test(v)) return true
+  if (!testMode) return false
+  const slashed = [
+    '/test off',
+    '/test',
+    '/common',
+    '/uncommon',
+    '/rare',
+    '/epic',
+    '/legendary',
+  ]
+  for (const full of slashed) {
+    if (full.startsWith(v) || v === full) return true
+    if (
+      v.startsWith(full) &&
+      (v.length === full.length || v[full.length] === ' ')
+    ) {
+      return true
+    }
+  }
+  return false
 }
 
 type OpenclawSlash =
@@ -86,6 +115,7 @@ const OPENCLAW_GUIDE_STEPS = getOpenclawHelpSteps()
 function ChatDialogPanel(): React.ReactElement {
   const setAppState = useSetAppState()
   const chatLoading = useAppState(s => s.chatLoading)
+  const testMode = useAppState(s => Boolean(s.testMode))
   const openclawGuideStep = useAppState(s => s.openclawGuideStep)
   const openclawConfigured = useAppState(s => s.openclawConfigured)
   const [draft, setDraft] = useState('')
@@ -152,6 +182,57 @@ function ChatDialogPanel(): React.ReactElement {
     if (isSlashNight(t)) {
       setDraft('')
       setAppState(s => ({ ...s, nightMode: !s.nightMode }))
+      return
+    }
+
+    const low = t.trim().toLowerCase()
+    if (low === '/test off' || low.startsWith('/test off ')) {
+      setDraft('')
+      clearRollCache()
+      setGlobalConfig({
+        testMode: false,
+        testForcedRarity: undefined,
+        testRollNonce: undefined,
+      })
+      setAppState(s => ({
+        ...s,
+        testMode: false,
+        chatBubble: undefined,
+      }))
+      return
+    }
+    if (low === '/test') {
+      setDraft('')
+      clearRollCache()
+      setGlobalConfig({
+        testMode: true,
+        testForcedRarity: undefined,
+        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      })
+      setAppState(s => ({
+        ...s,
+        testMode: true,
+        chatBubble: undefined,
+      }))
+      return
+    }
+
+    const raritySlash = parseTestRaritySlash(t)
+    if (raritySlash) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        return
+      }
+      setDraft('')
+      clearRollCache()
+      setGlobalConfig({
+        testForcedRarity: raritySlash,
+        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      })
+      setAppState(s => ({
+        ...s,
+        chatBubble: `已按 ${raritySlash} 随机外形。`,
+      }))
       return
     }
 
@@ -263,9 +344,11 @@ function ChatDialogPanel(): React.ReactElement {
         setDraft(value)
         return
       }
-      setDraft(prev => (isAllowedPetShortcutDraft(value) ? value : prev))
+      setDraft(prev =>
+        isAllowedPetShortcutDraft(value, testMode) ? value : prev,
+      )
     },
-    [chatLoading],
+    [chatLoading, testMode],
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
