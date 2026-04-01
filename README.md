@@ -5,7 +5,8 @@
 接上 **OpenClaw** 网关，它还能和你聊天；不配网关，它照常趴桌卖萌。
 
 ## 一览
-<img width="2498" height="1282" alt="image" src="https://github.com/user-attachments/assets/7d079a8f-d4bc-41d1-ab1b-4cd46eaf7568" />
+![001-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/12deb766-c529-4489-8c43-7d5f721f4714)
+
 
 | 维度 | 玩点 |
 |------|------|
@@ -35,11 +36,12 @@
 <img width="672" height="450" alt="image" src="https://github.com/user-attachments/assets/92f0984d-c0e4-4882-8339-cb09913eaf34" />
 
 ### 睡觉
-<img width="454" height="348" alt="image" src="https://github.com/user-attachments/assets/3ec8997a-9f62-4e29-b363-4b93e5365662" />
+![2026-04-0120 21 44-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/d9620246-2b27-4130-b24d-0e8db104db20)
 
 ### 抚摸
 <img width="746" height="576" alt="image" src="https://github.com/user-attachments/assets/d49d7a7d-094c-4efe-b58d-9867bc97148f" />
 
+## 快速开始
 ```bash
 npm install
 npm run dev
