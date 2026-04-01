@@ -1,10 +1,11 @@
 # OpenBuddy
 
-**桌面 ASCII 盲盒搭档**：一只精灵、五档稀有度、二十四种种族——还有帽子、眼睛花样、隐藏款闪与多词条面板（DEBUGGING / PATIENCE / CHAOS / WISDOM / SNARK 等）。每件外形由你的 **`userID` 种子**一次铸成，换电脑不换号，搭档不变。
+**桌面盲盒搭档**：一只精灵、五档稀有度、二十四种种族——还有帽子、眼睛花样、隐藏款闪与多词条面板（DEBUGGING / PATIENCE / CHAOS / WISDOM / SNARK 等）。
 
 接上 **OpenClaw** 网关，它还能和你聊天；不配网关，它照常趴桌卖萌。
 
 ## 一览
+<img width="2498" height="1282" alt="image" src="https://github.com/user-attachments/assets/7d079a8f-d4bc-41d1-ab1b-4cd46eaf7568" />
 
 | 维度 | 玩点 |
 |------|------|
@@ -27,10 +28,6 @@
 | **自动化接入** | 代理可向 userData 投 **bootstrap pending**，一把完成孵化与网关配置。 |
 
 **边界**：不是通用聊天软件；模型与网关自备。契约与跑通步骤见 `docs/`。
-
-## 预览
-
-<img width="2498" height="1282" alt="image" src="https://github.com/user-attachments/assets/7d079a8f-d4bc-41d1-ab1b-4cd46eaf7568" />
 
 ## 快速运行
 
