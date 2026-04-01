@@ -6,7 +6,7 @@
 
 ## 预览
 
-<img width="3548" height="1834" alt="image" src="https://github.com/user-attachments/assets/3a96c2e8-2892-4967-a2ff-5d514792f226" />
+<img width="2498" height="1282" alt="image" src="https://github.com/user-attachments/assets/7d079a8f-d4bc-41d1-ab1b-4cd46eaf7568" />
 
 
 
