@@ -24,9 +24,11 @@ body {
   align-items: flex-end;
   padding: 0;
   background: transparent;
+  -webkit-app-region: no-drag;
 }
 
 .shell {
+  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: column;
   /* 含左侧多气泡 + 精灵列，避免首帧过窄再横向 setContentSize */
@@ -35,14 +37,40 @@ body {
   height: fit-content;
   /* 不设 max-width/max-height: 100%：否则会先按旧客户区宽高卡死 shell，测量偏小，
      连续两轮 resize 会把整块 UI 在竖直/水平方向挤挪（与 buddy-resize 右下角锚不一致） */
-  background: transparent;
   /* 去掉 paint containment，减轻透明窗尺寸微变时的整层重绘 */
   contain: layout;
   transform: translateZ(0);
 }
 
+/* /c：透明底；仅 surface-card 有浅底，窗口其余区域完全透明 */
+.shell--transparent {
+  background: transparent;
+}
+
+/* /c：浅色或深色带边框面板 */
+.shell--solid {
+  padding: 8px 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 20, 24, 0.16);
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.1);
+}
+
+.shell--solid-day {
+  background: rgba(244, 245, 249, 0.96);
+  border-color: rgba(20, 20, 24, 0.14);
+}
+
+.shell--solid-night {
+  background: rgba(22, 22, 28, 0.96);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 4px 28px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
 /* 桌宠在上、输入在右下侧下方，整体右对齐 */
 .pet-column {
+  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -60,6 +88,7 @@ body {
 }
 
 .pet-row-outer {
+  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: row;
   align-items: flex-end;
@@ -68,13 +97,14 @@ body {
 }
 
 .pet-drag {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
 }
 
 .pet-view {
+  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -82,7 +112,7 @@ body {
 
 /* 气泡与精灵底对齐：多行时主要在上方增高；窗口尺寸变化由主进程 buddy-resize 锚定右下角 */
 .pet-row {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   display: flex;
   flex-direction: row;
   align-items: flex-end;
@@ -95,10 +125,10 @@ body {
   text-align: center;
   color: #5a5a62;
   font-size: 12px;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
-/* ASCII 精灵可拖动窗口；抚摸由主进程 `move` IPC 触发（见 preload subscribeWindowMoved） */
+/* 仅 ASCII 精灵块可拖移无边框窗；抚摸由主进程 `move` IPC（见 preload subscribeWindowMoved） */
 .sprite-pre {
   color: #0f0f12;
   /* 避免大白边 text-shadow 在透明背景上帧切换时看起来像「白色拖尾」 */
@@ -123,13 +153,18 @@ body {
   user-select: none;
 }
 
+/* 部分 WebKit 下需让 pre 内子节点显式参与 drag，否则仅空白处可拖 */
+.sprite-pre * {
+  -webkit-app-region: drag;
+}
+
 /* 桌宠旁气泡（非 anchored 时仍用 relative，便于尾翼定位） */
 .pet-chat-bubble {
   position: relative;
   flex-shrink: 0;
   max-width: 220px;
   padding: 8px 10px 8px 9px;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .pet-chat-bubble-body {
@@ -254,8 +289,8 @@ body {
   opacity: 0.55;
 }
 
-/* /c 夜间模式 */
-.shell.night-mode .surface-card {
+/* 夜间配色：透明夜 / 深色带框共用（与早期仅 night-mode 时一致） */
+.shell.shell--palette-night .surface-card {
   background: rgba(34, 34, 40, 0.9);
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow:
@@ -263,36 +298,36 @@ body {
     0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
 
-.shell.night-mode .sprite-pre {
+.shell.shell--palette-night .sprite-pre {
   text-shadow: 0 0 1px rgba(0, 0, 0, 0.45);
 }
 
-.shell.night-mode .pet-muted {
+.shell.shell--palette-night .pet-muted {
   color: #a0a0a8;
 }
 
-.shell.night-mode .pet-chat-bubble-body,
-.shell.night-mode .pet-chat-bubble-line {
+.shell.shell--palette-night .pet-chat-bubble-body,
+.shell.shell--palette-night .pet-chat-bubble-line {
   color: #e4e4ea;
 }
 
-.shell.night-mode .pet-chat-bubble-loading {
+.shell.shell--palette-night .pet-chat-bubble-loading {
   color: #a8a8b0;
 }
 
-.shell.night-mode .pet-chat-stream-cursor {
+.shell.shell--palette-night .pet-chat-stream-cursor {
   color: #b8b8c8;
 }
 
-.shell.night-mode .pet-chat-bubble-tail {
+.shell.shell--palette-night .pet-chat-bubble-tail {
   border-left-color: rgba(34, 34, 40, 0.9);
   filter: drop-shadow(1px 0 0 rgba(255, 255, 255, 0.06));
 }
 
-.shell.night-mode .chat-dialog-input {
+.shell.shell--palette-night .chat-dialog-input {
   color: #e6e6ec;
 }
 
-.shell.night-mode .chat-dialog-input::placeholder {
+.shell.shell--palette-night .chat-dialog-input::placeholder {
   color: #787882;
 }

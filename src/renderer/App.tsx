@@ -8,7 +8,12 @@ import React, {
 } from 'react'
 import { getGlobalConfig, setGlobalConfig } from '@buddy/config.js'
 import { clearRollCache } from '@buddy/companion.js'
-import { RARITIES, type BuddyAppState, type Rarity } from '@buddy/types.js'
+import {
+  RARITIES,
+  type BuddyAppState,
+  type Rarity,
+  type ShellAppearance,
+} from '@buddy/types.js'
 import {
   BuddyStateProvider,
   useAppState,
@@ -26,6 +31,16 @@ function isSlashRandomPet(t: string): boolean {
 
 function isSlashNight(t: string): boolean {
   return t === '/c' || t.startsWith('/c ')
+}
+
+function nextShellAppearance(
+  current: ShellAppearance | undefined,
+): ShellAppearance {
+  const c = current ?? 'transparent'
+  if (c === 'transparent') return 'transparent-dark'
+  if (c === 'transparent-dark') return 'solid-day'
+  if (c === 'solid-day') return 'solid-night'
+  return 'transparent'
 }
 
 function parseTestRaritySlash(t: string): Rarity | null {
@@ -108,48 +123,32 @@ function parseOpenclawSlash(t: string): OpenclawSlash | null {
 
 const OPENCLAW_GUIDE_STEPS = getOpenclawHelpSteps()
 
-const DIALOGUE_GAP_MS = 60_000
-const PLAYFUL_AFTER_MS = 5 * 60_000
-const PLAYFUL_CLEAR_MS = 60_000
-const SLEEP_AFTER_MS = 5 * 60_000
+const SLEEP_AFTER_MS = 15_000
 const MOOD_TICK_MS = 1000
 
+/** 刷新「未休眠」计时；若在睡觉则弄醒。用于发收消息与输入框键入。 */
 function bumpDialogueActivity(s: BuddyAppState): Partial<BuddyAppState> {
   const now = Date.now()
-  const prev = s.lastConversationActivityAt ?? now
-  const gap = now - prev
-  let streak = s.dialogueStreakStartAt
-  if (streak == null || gap > DIALOGUE_GAP_MS) streak = now
   return {
     lastConversationActivityAt: now,
-    dialogueStreakStartAt: streak,
     petMood: s.petMood === 'sleep' ? undefined : s.petMood,
   }
 }
 
-/** 按沉默时长与连续对话进度自动切换 `petMood` */
+/** 按沉默时长自动切换 `petMood`（仅睡眠） */
 function AutoPetMood(): null {
   const setAppState = useSetAppState()
   useEffect(() => {
     const id = window.setInterval(() => {
       setAppState(s => {
         const now = Date.now()
-        const last = s.lastConversationActivityAt ?? now
-        const effSilent = s.chatLoading ? 0 : now - last
-        const streak = s.dialogueStreakStartAt
+        const lastConv = s.lastConversationActivityAt ?? now
+        const lastPet = s.lastPetAttentionAt ?? 0
+        const lastForSleep = Math.max(lastConv, lastPet)
+        const effSilentSleep = s.chatLoading ? 0 : now - lastForSleep
 
-        let petMood: 'sleep' | 'playful' | undefined
-        if (effSilent >= SLEEP_AFTER_MS) {
-          petMood = 'sleep'
-        } else if (
-          streak != null &&
-          now - streak >= PLAYFUL_AFTER_MS &&
-          effSilent < PLAYFUL_CLEAR_MS
-        ) {
-          petMood = 'playful'
-        } else {
-          petMood = undefined
-        }
+        const petMood: 'sleep' | undefined =
+          effSilentSleep >= SLEEP_AFTER_MS ? 'sleep' : undefined
 
         if (s.petMood === petMood) return s
         return { ...s, petMood }
@@ -237,7 +236,10 @@ function ChatDialogPanel(): React.ReactElement {
     }
     if (isSlashNight(t)) {
       setDraft('')
-      setAppState(s => ({ ...s, nightMode: !s.nightMode }))
+      setAppState(s => ({
+        ...s,
+        shellAppearance: nextShellAppearance(s.shellAppearance),
+      }))
       return
     }
 
@@ -395,7 +397,7 @@ function ChatDialogPanel(): React.ReactElement {
   }, [chatLoading, draft, setAppState])
 
   const inputPlaceholder = useMemo((): string => {
-    const tail = ' · /c（夜间）· 拖动精灵抚摸'
+    const tail = ' · /c（夜/浅色框/深色框）'
     if (chatLoading) return '在想中：仅可 /c'
     if (openclawConfigured) return `Enter 发送${tail}`
     if (typeof openclawGuideStep === 'number')
@@ -406,6 +408,7 @@ function ChatDialogPanel(): React.ReactElement {
   const onDraftChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
       const value = e.target.value
+      setAppState(s => ({ ...s, ...bumpDialogueActivity(s) }))
       if (!chatLoading) {
         setDraft(value)
         return
@@ -414,7 +417,7 @@ function ChatDialogPanel(): React.ReactElement {
         isAllowedPetShortcutDraft(value, testMode) ? value : prev,
       )
     },
-    [chatLoading, testMode],
+    [chatLoading, testMode, setAppState],
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -447,10 +450,22 @@ function ChatDialogPanel(): React.ReactElement {
 const BUBBLE_STACK_RESERVE_PX = 72
 const RESIZE_MARGIN = 8
 
+const RESIZE_FIT_EPSILON_PX = 3
+
+function shellClassName(appearance: ShellAppearance | undefined): string {
+  const a = appearance ?? 'transparent'
+  if (a === 'transparent') return 'shell shell--transparent'
+  if (a === 'transparent-dark')
+    return 'shell shell--transparent shell--palette-night'
+  if (a === 'solid-day') return 'shell shell--solid shell--solid-day'
+  return 'shell shell--solid shell--solid-night shell--palette-night'
+}
+
 function Shell(): React.ReactElement {
-  const nightMode = useAppState(s => Boolean(s.nightMode))
+  const shellAppearance = useAppState(s => s.shellAppearance)
   const shellRef = useRef<HTMLDivElement>(null)
   const resizeRaf = useRef(0)
+  const lastFitRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
 
   useLayoutEffect(() => {
     const el = shellRef.current
@@ -465,6 +480,14 @@ function Shell(): React.ReactElement {
       const h = Math.round(
         r.height + BUBBLE_STACK_RESERVE_PX + RESIZE_MARGIN * 2,
       )
+      const { w: lw, h: lh } = lastFitRef.current
+      if (
+        Math.abs(w - lw) <= RESIZE_FIT_EPSILON_PX &&
+        Math.abs(h - lh) <= RESIZE_FIT_EPSILON_PX
+      ) {
+        return
+      }
+      lastFitRef.current = { w, h }
       void api(w, h)
     }
 
@@ -481,10 +504,7 @@ function Shell(): React.ReactElement {
   }, [])
 
   return (
-    <div
-      className={nightMode ? 'shell night-mode' : 'shell'}
-      ref={shellRef}
-    >
+    <div className={shellClassName(shellAppearance)} ref={shellRef}>
       <AutoPetMood />
       <div className="pet-column">
         <div className="pet-row-outer">
@@ -508,6 +528,7 @@ export default function App({
       initialState={{
         hatchLocked: initialHatchLocked,
         lastConversationActivityAt: Date.now(),
+        lastPetAttentionAt: Date.now(),
       }}
     >
       <Shell />

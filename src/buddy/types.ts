@@ -102,6 +102,15 @@ export const STAT_NAMES = [
 ] as const
 export type StatName = (typeof STAT_NAMES)[number]
 
+/** `/c` 循环：透明浅色 → 透明夜间 → 浅色带框 → 深色带框 */
+export const SHELL_APPEARANCES = [
+  'transparent',
+  'transparent-dark',
+  'solid-day',
+  'solid-night',
+] as const
+export type ShellAppearance = (typeof SHELL_APPEARANCES)[number]
+
 export type CompanionBones = {
   rarity: Rarity
   species: Species
@@ -183,16 +192,12 @@ export type BuddyAppState = {
   openclawConfigured?: boolean
   /** 主进程：buddy-bootstrap-pending 已应用后锁定，不可再孵化 */
   hatchLocked?: boolean
-  /** /c：切换夜间配色（桌宠与面板） */
-  nightMode?: boolean
-  /**
-   * 自动：`sleep`＝≥5min 无对话；`playful`＝连续对话满 5min（轮次间隔≤1min）且末次活动＜1min。
-   */
-  petMood?: 'sleep' | 'playful'
-  /** 最近一次用户发话或助手回复结束的时间戳（用于自动心情） */
+  /** /c：在 `SHELL_APPEARANCES` 间循环 */
+  shellAppearance?: ShellAppearance
+  /** 自动：`sleep`＝≥15s 无对话且无抚摸。✦ 星星仅在与气泡「在想中」同步的加载阶段显示（见 PetView）。 */
+  petMood?: 'sleep'
+  /** 最近一次用户发话或助手回复结束的时间戳（用于睡眠计时） */
   lastConversationActivityAt?: number
-  /**
-   * 当前「连续对话」段的起点：与上次活动时间间隔超过 1min 则重开一段。
-   */
-  dialogueStreakStartAt?: number
+  /** 最近一次拖窗抚摸精灵（`buddy-window-moved`）的时间戳；与对话合并后用于「睡眠」计时 */
+  lastPetAttentionAt?: number
 }

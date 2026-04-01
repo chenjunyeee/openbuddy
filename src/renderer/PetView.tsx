@@ -18,7 +18,8 @@ const IDLE_SEQUENCE = [
 
 /** 装饰行：对 `SPECIES` 中任意种族共用，不分支 species。 */
 const SLEEP_ZZZ = ['    z      ', '   z z     ', '  Z   z    ']
-const PLAYFUL_SPARKLES = [' · ✦ · ✦  ', ' ✦  ·  ✦  ', '  · ✦  ·   ']
+/** 与气泡「在想中」同步：仅 `chatLoading` 且尚无流式正文时显示 */
+const THINKING_SPARKLES = [' · ✦ · ✦  ', ' ✦  ·  ✦  ', '  · ✦  ·   ']
 
 const H = '♥'
 const PET_HEARTS = [
@@ -28,6 +29,9 @@ const PET_HEARTS = [
   `${H}  ${H}      ${H} `,
   '·    ·   ·  ',
 ]
+
+/** 与爱心行同宽同高、占位避免摸宠时增删行触发 resize ↔ setBounds 微抖 */
+const PET_HEART_ROW_PLACEHOLDER = ' '.repeat(PET_HEARTS[0]!.length)
 
 const BUBBLE_LINE_CHARS = 20
 const BUBBLE_MAX_LINES = 10
@@ -137,12 +141,19 @@ export function PetView(): React.ReactElement {
     const sub = window.buddyDesktop?.subscribeWindowMoved
     if (!sub) return
     return sub(() => {
-      setAppState(s => ({ ...s, companionPetAt: Date.now() }))
+      setAppState(s => ({
+        ...s,
+        companionPetAt: Date.now(),
+        lastPetAttentionAt: Date.now(),
+        petMood: s.petMood === 'sleep' ? undefined : s.petMood,
+      }))
     })
   }, [setAppState])
 
-  const nightMode = useAppState(s => Boolean(s.nightMode))
-  /** 与种族无关：任意 `companion.species` 均适用同一套 sleep / playful 逻辑。 */
+  const appearance = useAppState(s => s.shellAppearance)
+  const darkPalette =
+    appearance === 'transparent-dark' || appearance === 'solid-night'
+  /** 与种族无关：睡眠由 `petMood`；星星仅在「在想中」阶段。 */
   const petMood = useAppState(s => s.petMood)
   const companion = getCompanion()
   if (!companion) {
@@ -153,8 +164,8 @@ export function PetView(): React.ReactElement {
     )
   }
 
-  const heartInk = nightMode ? BUDDY_HEART_RGB_DARK : BUDDY_HEART_RGB_LIGHT
-  const rarityInk = nightMode
+  const heartInk = darkPalette ? BUDDY_HEART_RGB_DARK : BUDDY_HEART_RGB_LIGHT
+  const rarityInk = darkPalette
     ? BUDDY_RARITY_RGB_DARK[companion.rarity]
     : BUDDY_RARITY_RGB_LIGHT[companion.rarity]
   /** 拖窗会高频刷新 `companionPetAt`，不得再绑「渲染里 reset petStartTick」否则 petAge 归零、爱心与精灵会闪 */
@@ -164,19 +175,23 @@ export function PetView(): React.ReactElement {
     !chatLoading &&
     Date.now() < replyBurstUntil.current &&
     Boolean(chatBubble?.trim())
-  /** 对话兴奋态；抚摸单独叠加，不与睡觉/星星装饰互斥 */
+  /** 对话兴奋态（含整段 loading 与回复结束后的 burst）；抚摸单独叠加 */
   const chatExcited = Boolean(chatLoading) || replyBurstActive
   const spriteFast = petting || chatExcited
 
+  /** 与 `PetBubble` 的「在想中」同条件：loading 且尚无流式字符 */
+  const bubbleThinkingOnly =
+    Boolean(chatLoading) && !(chatBubble != null && chatBubble.length > 0)
+
   const frameCount = spriteFrameCount(companion.species)
-  const heartLine = petting ? PET_HEARTS[tick % PET_HEARTS.length]! : null
+  const heartLineText = petting
+    ? PET_HEARTS[tick % PET_HEARTS.length]!
+    : PET_HEART_ROW_PLACEHOLDER
 
   let idleSeqIndex = tick % IDLE_SEQUENCE.length
   if (!spriteFast) {
     if (petMood === 'sleep') {
       idleSeqIndex = Math.floor(tick / 2) % IDLE_SEQUENCE.length
-    } else if (petMood === 'playful') {
-      idleSeqIndex = (tick * 2) % IDLE_SEQUENCE.length
     }
   }
 
@@ -201,15 +216,11 @@ export function PetView(): React.ReactElement {
   const moodPrefix: string[] = []
   if (petMood === 'sleep' && !chatLoading) {
     moodPrefix.push(SLEEP_ZZZ[tick % SLEEP_ZZZ.length]!)
-  } else if (petMood === 'playful' && !chatLoading) {
-    moodPrefix.push(PLAYFUL_SPARKLES[tick % PLAYFUL_SPARKLES.length]!)
+  } else if (bubbleThinkingOnly) {
+    moodPrefix.push(THINKING_SPARKLES[tick % THINKING_SPARKLES.length]!)
   }
 
-  const spriteLines = [
-    ...moodPrefix,
-    ...(heartLine ? [heartLine] : []),
-    ...bodyLines,
-  ]
+  const spriteLines = [...moodPrefix, heartLineText, ...bodyLines]
 
   const showBubble =
     Boolean(chatLoading) || Boolean(chatBubble != null && chatBubble.trim())
@@ -222,20 +233,25 @@ export function PetView(): React.ReactElement {
         ) : null}
         <pre
           className="sprite-pre"
-          title="拖动移窗时会抚摸"
+          title="仅精灵区域可拖移窗口（抚摸）"
         >
           {spriteLines.map((line, i) => {
             const moodLines = moodPrefix.length
             const heartIdx = moodLines
-            const isHeartRow = Boolean(heartLine) && i === heartIdx
+            const isHeartRow = i === heartIdx
             const isMoodRow = i < moodLines
             return (
               <React.Fragment key={i}>
                 {i > 0 ? '\n' : null}
                 <span
                   style={{
-                    color: isHeartRow ? heartInk : rarityInk,
-                    opacity: isMoodRow ? 0.92 : 1,
+                    color: isHeartRow && petting ? heartInk : rarityInk,
+                    opacity:
+                      isHeartRow && !petting
+                        ? 0
+                        : isMoodRow
+                          ? 0.92
+                          : 1,
                   }}
                 >
                   {line}
