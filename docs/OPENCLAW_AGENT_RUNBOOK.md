@@ -20,6 +20,16 @@
 
 网关未起则先按 OpenClaw 部署启动。
 
+### 独立 Agent 与 `/update`（OpenClaw 侧配置提示）
+
+按本手册在本机接 OpenClaw 时，实践中往往会为 **本 Runbook / openbuddy 检出** 单独跑一个 **Agent**。为避免长期停留在旧代码与旧步骤，**建议在 Soul、Agent 与 Tools 三处一并纳入同一套「更新」约定**（不要只写在其中一层）：
+
+- **服务目录**：Agent **必须稳定知晓**本桌宠 **openbuddy 检出根目录**（与下文 **`$REPO_ROOT`** 为同一物理路径）。请在 **Soul、Agent 配置与 Tools** 中 **写清同一个绝对路径**（例如环境变量 `OPENBUDDY_REPO_ROOT` / 系统提示里的固定说明 / Tool 默认参数），**不要**默认「在任何 cwd 下都能跑」；执行 `git pull`、写 pending、`npm run`、`electron .`、`--buddy-print-paths`、重启进程等步骤时，均应以该目录为基准。
+- **触发**：收到 **`/update`**（或团队内与之一致的固定指令）即视为要求升级到仓库最新。
+- **行为**：在上述 **服务目录** 内执行 **拉取最新代码**（如 `git pull` 或等价流程），再 **重新安装/构建并重新运行**（如 `npm ci`、`npm run build`，并重启 `npm run start:dist` 或由你们托管的进程），使自动化与桌宠二进制与当前 Runbook、当前主分支一致。
+
+具体命令与安全策略（分支、是否强制、是否仅 fast-forward）由部署方在 OpenClaw 里实现；本段约定：**服务目录对 Agent 显式可读**，且 **Soul / Agent / Tools 与 `/update` 对齐**，避免 Soul 有路径说明而 Tools 仍用错 cwd、或更新与写 pending 不在同一检出根上。
+
 ---
 
 ## 0.1 空白系统（镜像 / 加速，按需）
