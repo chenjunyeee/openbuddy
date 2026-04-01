@@ -1,12 +1,37 @@
 # OpenClaw 执行手册：从零跑通 openbuddy 桌宠 + 本机 OpenClaw 对话
 
 > **读者**：本机 OpenClaw / 可跑 shell 的代理。  
-> **目标**：克隆 [openbuddy](https://github.com/chenjunyeee/openbuddy)、`npm ci` + `build`、**无 UI** 写入 pending 完成孵化与网关配置，启动后与**已运行的本机网关**聊天。  
+> **目标**：在**独立 Agent + 独立工作区**内，先与用户对齐桌宠需求，再克隆 [openbuddy](https://github.com/chenjunyeee/openbuddy)、`npm ci` + `build`、**无 UI** 写入 pending，启动后与**已运行的本机网关**聊天。  
 > **字段说明**：`buddy-bootstrap-pending.json` → [openclaw-bootstrap.md](./openclaw-bootstrap.md)。
+
+---
+
+## 总流程（编排顺序，须遵守）
+
+下列顺序**不可颠倒**；OpenClaw 指挥自动化时应按此编排，避免未问清需求就拉代码、或路径与 Agent 不一致。
+
+1. **创建独立 Agent**  
+   在本机 OpenClaw 中为「桌宠 / openbuddy / 本 Runbook」单独建一个 Agent（与日常通用助手隔离），后续 shell、Tools、Soul 均指向该 Agent。
+
+2. **划定独立工作区**  
+   为该 Agent 指定**唯一**物理目录作为工作区根（下文 **`$REPO_ROOT`** 即此根：检出后须含 `package.json`、`electron/`、`src/`）。Agent 配置、环境变量（如 `OPENBUDDY_REPO_ROOT`）、Tools 默认 cwd **必须**与此路径一致，**不要**假设任意 cwd 可用。
+
+3. **向用户确认桌宠需求（再拉代码）**  
+   在**尚未** `git clone` / 拉取仓库前，明确询问用户想要什么样的桌宠：显示名 `hatch.name`、性格 `personality`、是否需代选 `userID` 等，遵循下文「Agent 强制约定」。**用户答复明确之前，不执行 §1 及之后技术步骤。**
+
+4. **拉取项目到该 Agent 工作区根**  
+   需求确认后，将 openbuddy **检出到步骤 2 的工作区根**（空目录下 `git clone … .` 使仓库根即工作区根，或团队约定子目录时须在 Soul / Agent / Tools 写清同一 `$REPO_ROOT`）。
+
+5. **配置 → 初始化 → 运行**  
+   按 §2 起：`npm ci`、`npm run build`、解析 `--buddy-print-paths`、写 `buddy-bootstrap-pending.json`（§3–§5）、`npm run start:dist`（§6），验收见 §7。
+
+**`/update`**（§0）仍在已绑定的 **`$REPO_ROOT`** 内拉取最新并重建/重启，与工作区绑定不变。
+
+---
 
 ### Agent 强制约定：宠物名称必须来自用户
 
-- `hatch.name`：须用户指定或确认；可给示例但必须由用户选定，**禁止**默认成 `buddy` / `test` 等仅为跑通。未答复则**先问再写**第 5 步。  
+- `hatch.name`：须用户指定或确认；可给示例但必须由用户选定，**禁止**默认成 `buddy` / `test` 等仅为跑通。未答复则**先问再写** pending（见下文 §5）。  
 - 用户明确「随便 / 你起一个」→ 可代选，同轮 **回显** 将写入 pending 的最终名字。  
 - `personality`：优先用户原话；无则一句确认短默认，勿擅自写长人设。
 
@@ -22,9 +47,9 @@
 
 ### 独立 Agent 与 `/update`（OpenClaw 侧配置提示）
 
-按本手册在本机接 OpenClaw 时，实践中往往会为 **本 Runbook / openbuddy 检出** 单独跑一个 **Agent**。为避免长期停留在旧代码与旧步骤，**建议在 Soul、Agent 与 Tools 三处一并纳入同一套「更新」约定**（不要只写在其中一层）：
+编排顺序见上文「总流程」：**先**建独立 Agent、**再**绑定独立工作区、**问清桌宠**后**再**克隆；本节约定的是该 Agent **绑定好之后**的路径与更新行为。为避免长期停留在旧代码与旧步骤，**建议在 Soul、Agent 与 Tools 三处一并纳入同一套「更新」约定**（不要只写在其中一层）：
 
-- **服务目录**：Agent **必须稳定知晓**本桌宠 **openbuddy 检出根目录**（与下文 **`$REPO_ROOT`** 为同一物理路径）。请在 **Soul、Agent 配置与 Tools** 中 **写清同一个绝对路径**（例如环境变量 `OPENBUDDY_REPO_ROOT` / 系统提示里的固定说明 / Tool 默认参数），**不要**默认「在任何 cwd 下都能跑」；执行 `git pull`、写 pending、`npm run`、`electron .`、`--buddy-print-paths`、重启进程等步骤时，均应以该目录为基准。
+- **服务目录**：该独立 Agent **必须稳定知晓** **openbuddy 在该工作区内的检出根目录**（与下文 **`$REPO_ROOT`** 为同一物理路径）。请在 **Soul、Agent 配置与 Tools** 中 **写清同一个绝对路径**（例如环境变量 `OPENBUDDY_REPO_ROOT` / 系统提示里的固定说明 / Tool 默认参数），**不要**默认「在任何 cwd 下都能跑」；执行 `git pull`、写 pending、`npm run`、`electron .`、`--buddy-print-paths`、重启进程等步骤时，均应以该目录为基准。
 - **触发**：收到 **`/update`**（或团队内与之一致的固定指令）即视为要求升级到仓库最新。
 - **行为**：在上述 **服务目录** 内执行 **拉取最新代码**（如 `git pull` 或等价流程），再 **重新安装/构建并重新运行**（如 `npm ci`、`npm run build`，并重启 `npm run start:dist` 或由你们托管的进程），使自动化与桌宠二进制与当前 Runbook、当前主分支一致。
 
@@ -61,16 +86,22 @@ git clone https://ghproxy.net/https://github.com/chenjunyeee/openbuddy.git
 
 镜像可用性变化，失败则换官方 / 代理 / zip / SSH。
 
-**Agent 自检**：Node/npm OK；`npm ci` 失败已试 registry / `ELECTRON_MIRROR`；`hatch.name` 已与用户确认（文首约定）。
+**Agent 自检**：Node/npm OK；`npm ci` 失败已试 registry / `ELECTRON_MIRROR`；**独立 Agent + 工作区已绑定**；**桌宠需求已与用户确认**（文首约定）；`hatch.name`/性格等已可用于 §3–§5。
 
 ---
 
 ## 1. 克隆
 
+**前置**：已完成「总流程」步骤 1–3（Agent、工作区、用户桌宠需求），在**该 Agent 的工作区根**执行。
+
+示例（工作区空目录即仓库根）：
+
 ```bash
-git clone https://github.com/chenjunyeee/openbuddy.git
-cd openbuddy
+cd "$REPO_ROOT"
+git clone https://github.com/chenjunyeee/openbuddy.git .
 ```
+
+若克隆到子目录，则后文所有命令在 **`$REPO_ROOT`** = 含 `package.json` 的仓库根，且须与 Tools/Soul 声明的绝对路径一致。
 
 下文 **`$REPO_ROOT`** = 仓库根（含 `package.json`、`electron/`、`src/`）。
 
@@ -184,12 +215,16 @@ npm run start:dist
 
 ## 10. 汇总模板（替换变量后执行）
 
-已导出：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`BUDDY_HATCH_USER_ID`、`BUDDY_DISPLAY_NAME`、`BUDDY_PERSONALITY`（名/性格已按文首与用户确认）。空白机可先 §0.1。
+**前置**：已创建独立 Agent、已设 **`REPO_ROOT`** 为该 Agent 独立工作区根（并完成克隆，本模板从克隆后开始；若尚未克隆，先执行 §1）。
+
+已导出：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`BUDDY_HATCH_USER_ID`、`BUDDY_DISPLAY_NAME`、`BUDDY_PERSONALITY`（名/性格已按「总流程」与用户确认）。空白机可先 §0.1。
 
 ```bash
-export REPO_ROOT="$HOME/work/openbuddy"
+# 须与本 Agent 绑定的独立工作区根（检出后含 package.json）
+export REPO_ROOT="/path/to/your-agent-workspace"
 # npm config set registry https://registry.npmmirror.com
 # export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+# 若 §1 未单独执行：空目录下克隆到工作区根
 git clone https://github.com/chenjunyeee/openbuddy.git "$REPO_ROOT"
 cd "$REPO_ROOT"
 npm ci
