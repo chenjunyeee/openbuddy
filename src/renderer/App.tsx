@@ -159,16 +159,23 @@ function AutoPetMood(): null {
   return null
 }
 
-/** 底部：对白输入；抚摸与拖窗同源：拖动无边框窗口时主进程发 `buddy-window-moved`（见 PetView / preload） */
+/** 底部：对白输入；睡眠 zzz 时仅隐藏（占位不变），避免窗口缩放导致精灵位移 */
 function ChatDialogPanel(): React.ReactElement {
   const setAppState = useSetAppState()
   const chatLoading = useAppState(s => s.chatLoading)
+  const petMood = useAppState(s => s.petMood)
   const testMode = useAppState(s => Boolean(s.testMode))
   const openclawGuideStep = useAppState(s => s.openclawGuideStep)
   const openclawConfigured = useAppState(s => s.openclawConfigured)
   const [draft, setDraft] = useState('')
   const streamIdRef = useRef(0)
   const activeStreamSessionRef = useRef(-1)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  /** 睡眠时收起输入；引导 / 在想中始终保留以便 /c 等 */
+  const chatPanelVisible =
+    petMood !== 'sleep' ||
+    typeof openclawGuideStep === 'number' ||
+    Boolean(chatLoading)
 
   useEffect(() => {
     const sub = window.buddyDesktop?.subscribeChatStream
@@ -396,6 +403,11 @@ function ChatDialogPanel(): React.ReactElement {
     }))
   }, [chatLoading, draft, setAppState])
 
+  useLayoutEffect(() => {
+    if (chatPanelVisible) inputRef.current?.focus()
+    else inputRef.current?.blur()
+  }, [chatPanelVisible])
+
   const inputPlaceholder = useMemo((): string => {
     const tail = ' · /c（夜/浅色框/深色框）'
     if (chatLoading) return '在想中：仅可 /c'
@@ -432,17 +444,29 @@ function ChatDialogPanel(): React.ReactElement {
   }
 
   return (
-    <div className="chat-dialog-panel surface-card" role="dialog" aria-label="对桌宠说话">
+    <div
+      className={
+        chatPanelVisible
+          ? 'chat-dialog-panel surface-card'
+          : 'chat-dialog-panel surface-card chat-dialog-panel--concealed'
+      }
+      role="dialog"
+      aria-label="对桌宠说话"
+      aria-hidden={!chatPanelVisible}
+    >
       <textarea
+        ref={inputRef}
         className="chat-dialog-input"
         rows={1}
         value={draft}
         placeholder={inputPlaceholder}
         aria-label="消息输入，Enter 发送"
+        disabled={!chatPanelVisible}
+        tabIndex={chatPanelVisible ? 0 : -1}
         onChange={onDraftChange}
         onKeyDown={onKeyDown}
       />
-    </div>
+  </div>
   )
 }
 

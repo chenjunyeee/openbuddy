@@ -255,6 +255,13 @@ body {
   width: min(260px, 72vw);
   min-width: 168px;
   padding: 5px 9px;
+  flex-shrink: 0;
+}
+
+/* 睡眠时不占交互、仍占位，避免 buddy-resize 改变精灵在屏幕上的位置 */
+.chat-dialog-panel--concealed {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .chat-dialog-input {
