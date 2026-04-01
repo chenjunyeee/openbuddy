@@ -1,4 +1,4 @@
-# OpenBuddy（buddy-desktop）
+# OpenBuddy
 
 桌面端桌宠：可选接入 **OpenClaw** 网关做对话；不配网关时仍可作为本地小窗口使用。
 
