@@ -1,12 +1,13 @@
 # OpenBuddy（buddy-desktop）
 
-桌面端桌宠：Electron 壳 + React 渲染层，`src/buddy` 中的陪伴物逻辑（外形由 `userID` 确定性推导）与窗口无关。可选接入 **OpenClaw** 网关做对话；不配网关时仍可作为本地小窗口使用。
+桌面端桌宠：可选接入 **OpenClaw** 网关做对话；不配网关时仍可作为本地小窗口使用。
 
 > 产品侧一句话：开在桌面一隅的小搭档——不抢戏，但一直在。（你可以在下面「预览」里放截图或动图。）
 
 ## 预览
 
-在此处加入截图或 GIF。常用写法：`![说明文字](./docs/assets/preview.png)`（把路径换成你仓库里的真实文件即可。）
+<img width="658" height="318" alt="image" src="https://github.com/user-attachments/assets/ed95051d-cbac-42e7-a05c-6a12b112574f" />
+
 
 ## 功能概览
 
