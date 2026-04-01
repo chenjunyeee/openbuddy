@@ -29,7 +29,16 @@
 
 **边界**：不是通用聊天软件；模型与网关自备。契约与跑通步骤见 `docs/`。
 
-## 快速运行
+
+## 状态
+### 思考
+<img width="672" height="450" alt="image" src="https://github.com/user-attachments/assets/92f0984d-c0e4-4882-8339-cb09913eaf34" />
+
+### 睡觉
+<img width="454" height="348" alt="image" src="https://github.com/user-attachments/assets/3ec8997a-9f62-4e29-b363-4b93e5365662" />
+
+### 抚摸
+<img width="746" height="576" alt="image" src="https://github.com/user-attachments/assets/d49d7a7d-094c-4efe-b58d-9867bc97148f" />
 
 ```bash
 npm install
