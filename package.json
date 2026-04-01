@@ -1,0 +1,32 @@
+{
+  "name": "buddy-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code buddy core + Electron desktop shell (clawd-style windowing)",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"wait-on -t 60000 http-get://127.0.0.1:5187/ && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5187/ electron .\"",
+    "build": "vite build",
+    "start:dist": "electron .",
+    "start:print-paths": "electron . --buddy-print-paths",
+    "typecheck": "tsc --noEmit",
+    "test:openclaw": "node electron/quick-openclaw-test.cjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "string-width": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "wait-on": "^8.0.1"
+  }
+}

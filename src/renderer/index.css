@@ -1,0 +1,256 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  -webkit-font-smoothing: antialiased;
+  /* 独立合成层，减轻透明窗口拖动/动画时的脏矩形残影 */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding: 0;
+  background: transparent;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  /* 含左侧多气泡 + 精灵列，避免首帧过窄再横向 setContentSize */
+  min-width: 320px;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  max-height: 100%;
+  background: transparent;
+  /* 去掉 paint containment，减轻透明窗尺寸微变时的整层重绘 */
+  contain: layout;
+  transform: translateZ(0);
+}
+
+/* 桌宠在上、输入在右下侧下方，整体右对齐 */
+.pet-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* 统一浅色卡片（桌宠气泡 + 对话框） */
+.surface-card {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(20, 20, 24, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.pet-row-outer {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 4px 2px 0;
+}
+
+.pet-drag {
+  -webkit-app-region: drag;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pet-view {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.pet-row {
+  -webkit-app-region: drag;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pet-muted {
+  padding: 8px;
+  text-align: center;
+  color: #5a5a62;
+  font-size: 12px;
+  -webkit-app-region: drag;
+}
+
+.sprite-pre {
+  color: #0f0f12;
+  /* 避免大白边 text-shadow 在透明背景上帧切换时看起来像「白色拖尾」 */
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.65);
+  flex-shrink: 0;
+}
+
+/* 桌宠旁气泡 */
+.pet-chat-bubble {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 220px;
+  padding: 8px 10px 8px 9px;
+  -webkit-app-region: drag;
+}
+
+.pet-chat-bubble-body {
+  font-size: 12px;
+  line-height: 1.38;
+  color: #141418;
+}
+
+.pet-chat-bubble-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pet-chat-bubble-loading {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-style: italic;
+  color: #42424a;
+}
+
+.pet-chat-bubble-loading-label {
+  flex-shrink: 0;
+}
+
+.pet-chat-bubble-dots {
+  display: inline-flex;
+  gap: 1px;
+  letter-spacing: 0;
+}
+
+.pet-chat-bubble-dots span:nth-child(1) {
+  animation: pet-chat-dot 1s ease-in-out 0s infinite;
+}
+.pet-chat-bubble-dots span:nth-child(2) {
+  animation: pet-chat-dot 1s ease-in-out 0.15s infinite;
+}
+.pet-chat-bubble-dots span:nth-child(3) {
+  animation: pet-chat-dot 1s ease-in-out 0.3s infinite;
+}
+
+@keyframes pet-chat-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.pet-chat-bubble-tail {
+  position: absolute;
+  right: -5px;
+  bottom: 10px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 5px solid rgba(255, 255, 255, 0.78);
+  filter: drop-shadow(1px 0 0 rgba(20, 20, 24, 0.08));
+}
+
+/* 桌宠右下：极简一块输入，无发送按钮（Enter 发送、Shift+Enter 换行） */
+.chat-dialog-panel {
+  -webkit-app-region: no-drag;
+  align-self: flex-end;
+  width: min(260px, 72vw);
+  min-width: 168px;
+  padding: 5px 9px;
+}
+
+.chat-dialog-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  font-family: inherit;
+  color: #141418;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  resize: none;
+  outline: none;
+  min-height: 1.4em;
+  max-height: 4.5em;
+  overflow-y: auto;
+}
+
+.chat-dialog-input::placeholder {
+  color: #8e8e96;
+  font-size: 11px;
+}
+
+.chat-dialog-input:focus {
+  outline: none;
+}
+
+.chat-dialog-input:disabled {
+  opacity: 0.55;
+}
+
+/* /c 夜间模式 */
+.shell.night-mode .surface-card {
+  background: rgba(34, 34, 40, 0.9);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 2px 14px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.shell.night-mode .sprite-pre {
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.shell.night-mode .pet-muted {
+  color: #a0a0a8;
+}
+
+.shell.night-mode .pet-chat-bubble-body,
+.shell.night-mode .pet-chat-bubble-line {
+  color: #e4e4ea;
+}
+
+.shell.night-mode .pet-chat-bubble-loading {
+  color: #a8a8b0;
+}
+
+.shell.night-mode .pet-chat-bubble-tail {
+  border-left-color: rgba(34, 34, 40, 0.9);
+  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, 0.06));
+}
+
+.shell.night-mode .chat-dialog-input {
+  color: #e6e6ec;
+}
+
+.shell.night-mode .chat-dialog-input::placeholder {
+  color: #787882;
+}

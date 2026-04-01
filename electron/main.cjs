@@ -1,0 +1,547 @@
+/**
+ * Desktop shell: frameless transparent always-on-top window (patterns from clawd-on-desk).
+ */
+require('./load-env.cjs')
+const { buildSystemPrompt } = require('./buddy-prompt.cjs')
+const chatSession = require('./chat-session.cjs')
+const {
+  sendOpenClawChatCompletion,
+  normalizeOpenClawGatewayBaseUrl,
+} = require('./openclaw-chat.cjs')
+const { app, BrowserWindow, screen, Menu, ipcMain } = require('electron')
+/** 若仍有拖影可试：启动前 export BUDDY_DISABLE_GPU=1（会略损性能） */
+if (process.env.BUDDY_DISABLE_GPU === '1') app.disableHardwareAcceleration()
+const path = require('path')
+const fs = require('fs')
+
+const isMac = process.platform === 'darwin'
+const isLinux = process.platform === 'linux'
+const isWin = process.platform === 'win32'
+const LINUX_WINDOW_TYPE = 'toolbar'
+const WIN_TOPMOST_LEVEL = 'pop-up-menu'
+const MAC_TOPMOST_LEVEL = 'screen-saver'
+
+const USER_DATA = app.getPath('userData')
+const PREFS_PATH = path.join(USER_DATA, 'buddy-desktop-prefs.json')
+const OPENCLAW_PREFS_PATH = path.join(USER_DATA, 'buddy-openclaw.json')
+const PROFILE_PATH = path.join(USER_DATA, 'buddy-profile.json')
+const BOOTSTRAP_PENDING = path.join(USER_DATA, 'buddy-bootstrap-pending.json')
+const BOOTSTRAP_APPLIED = path.join(USER_DATA, 'buddy-bootstrap-applied.json')
+
+const PRINT_PATHS_ONLY = process.argv.includes('--buddy-print-paths')
+/** 首帧占位（宽含多气泡列、高接近渲染端「内容 + 气泡栈预留」），减少首帧后尺寸跳动 */
+const DEFAULT_W = 340
+const DEFAULT_H = 520
+
+/** @type {{ url: string, token: string } | null | undefined} undefined 未读盘，null 无配置 */
+let openclawDiskCache
+
+function readOpenclawDiskPrefs() {
+  if (openclawDiskCache !== undefined) return openclawDiskCache
+  try {
+    const raw = JSON.parse(fs.readFileSync(OPENCLAW_PREFS_PATH, 'utf8'))
+    const url = String(raw?.url ?? '').trim()
+    const token = String(raw?.token ?? '').trim()
+    openclawDiskCache = url && token ? { url, token } : null
+  } catch {
+    openclawDiskCache = null
+  }
+  return openclawDiskCache
+}
+
+function writeOpenclawDiskPrefs(p) {
+  const url = normalizeOpenClawGatewayBaseUrl(p.url)
+  const token = p.token.trim()
+  fs.writeFileSync(OPENCLAW_PREFS_PATH, JSON.stringify({ url, token }))
+  openclawDiskCache = { url, token }
+}
+
+function clearOpenclawDiskPrefs() {
+  try {
+    fs.unlinkSync(OPENCLAW_PREFS_PATH)
+  } catch {}
+  openclawDiskCache = null
+}
+
+function readProfileDisk() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PROFILE_PATH, 'utf8'))
+    if (!raw || typeof raw !== 'object') return null
+    return raw
+  } catch {
+    return null
+  }
+}
+
+function writeProfileDisk(profile) {
+  fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2))
+}
+
+function getDefaultProfilePayload() {
+  return {
+    version: 1,
+    userID: 'buddy-desktop',
+    companion: {
+      name: 'Mochi',
+      personality: 'desktop',
+      hatchedAt: Date.now(),
+    },
+    hatchLocked: false,
+  }
+}
+
+/** 渲染进程 / 无 profile 文件时的占位（不落盘） */
+function readProfileForRenderer() {
+  const p = readProfileDisk()
+  if (
+    p &&
+    typeof p.userID === 'string' &&
+    p.companion &&
+    typeof p.companion.name === 'string' &&
+    typeof p.companion.personality === 'string' &&
+    Number.isFinite(Number(p.companion.hatchedAt))
+  ) {
+    return {
+      userID: String(p.userID),
+      companion: {
+        name: String(p.companion.name),
+        personality: String(p.companion.personality),
+        hatchedAt: Number(p.companion.hatchedAt),
+      },
+      hatchLocked: Boolean(p.hatchLocked),
+    }
+  }
+  const d = getDefaultProfilePayload()
+  return {
+    userID: d.userID,
+    companion: d.companion,
+    hatchLocked: false,
+  }
+}
+
+/**
+ * 消费 buddy-bootstrap-pending.json：写 OpenClaw + buddy-profile（hatchLocked）
+ */
+function applyBootstrapIfPending() {
+  if (!fs.existsSync(BOOTSTRAP_PENDING)) return
+  let rawText
+  try {
+    rawText = fs.readFileSync(BOOTSTRAP_PENDING, 'utf8')
+  } catch (e) {
+    console.error('[buddy-bootstrap] read pending failed', e)
+    return
+  }
+  let data
+  try {
+    data = JSON.parse(rawText)
+  } catch (e) {
+    console.error('[buddy-bootstrap] invalid JSON', e)
+    return
+  }
+  if (data.version !== 1) {
+    console.error('[buddy-bootstrap] version must be 1')
+    return
+  }
+  const oc = data.openclaw
+  const hatch = data.hatch
+  if (
+    !oc ||
+    typeof oc.url !== 'string' ||
+    typeof oc.token !== 'string'
+  ) {
+    console.error('[buddy-bootstrap] missing openclaw.url / openclaw.token')
+    return
+  }
+  if (
+    !hatch ||
+    typeof hatch.userID !== 'string' ||
+    typeof hatch.name !== 'string' ||
+    typeof hatch.personality !== 'string'
+  ) {
+    console.error(
+      '[buddy-bootstrap] missing hatch.userID / name / personality',
+    )
+    return
+  }
+  const existing = readProfileDisk()
+  if (existing?.hatchLocked === true) {
+    const skip = path.join(
+      USER_DATA,
+      `buddy-bootstrap-skipped-${Date.now()}.json`,
+    )
+    try {
+      fs.renameSync(BOOTSTRAP_PENDING, skip)
+    } catch {
+      try {
+        fs.unlinkSync(BOOTSTRAP_PENDING)
+      } catch {}
+    }
+    console.warn('[buddy-bootstrap] hatchLocked already; skipped →', skip)
+    return
+  }
+
+  const urlIn = String(oc.url).trim()
+  const token = String(oc.token).trim()
+  if (!urlIn || !token) {
+    console.error('[buddy-bootstrap] empty openclaw url or token')
+    return
+  }
+  try {
+    writeOpenclawDiskPrefs({ url: urlIn, token })
+  } catch (e) {
+    console.error('[buddy-bootstrap] openclaw write failed', e)
+    return
+  }
+
+  let userID = String(hatch.userID).trim().slice(0, 128)
+  if (!userID) userID = 'buddy-desktop'
+  const name = String(hatch.name).trim().slice(0, 64)
+  const personality = String(hatch.personality).trim().slice(0, 200)
+  if (!name || !personality) {
+    console.error('[buddy-bootstrap] hatch.name / personality must be non-empty')
+    return
+  }
+  let hatchedAt = Number(hatch.hatchedAt)
+  if (!Number.isFinite(hatchedAt) || hatchedAt <= 0) hatchedAt = Date.now()
+
+  const profileClean = {
+    version: 1,
+    userID,
+    companion: { name, personality, hatchedAt },
+    hatchLocked: true,
+  }
+  try {
+    writeProfileDisk(profileClean)
+  } catch (e) {
+    console.error('[buddy-bootstrap] profile write failed', e)
+    return
+  }
+
+  try {
+    fs.writeFileSync(
+      BOOTSTRAP_APPLIED,
+      JSON.stringify({ ...data, appliedAt: Date.now() }, null, 2),
+    )
+    fs.unlinkSync(BOOTSTRAP_PENDING)
+  } catch (e) {
+    console.error('[buddy-bootstrap] finalize pending failed', e)
+  }
+  console.log('[buddy-bootstrap] applied successfully')
+}
+
+function printBuddyPathsJson() {
+  const ud = app.getPath('userData')
+  console.log(
+    JSON.stringify(
+      {
+        userData: ud,
+        bootstrapPending: path.join(ud, 'buddy-bootstrap-pending.json'),
+        profile: path.join(ud, 'buddy-profile.json'),
+        openclaw: path.join(ud, 'buddy-openclaw.json'),
+        bootstrapApplied: path.join(ud, 'buddy-bootstrap-applied.json'),
+      },
+      null,
+      2,
+    ),
+  )
+}
+
+function getNearestWorkArea(cx, cy) {
+  const displays = screen.getAllDisplays()
+  let nearest = displays[0].workArea
+  let minDist = Infinity
+  for (const d of displays) {
+    const wa = d.workArea
+    const dx = Math.max(wa.x - cx, 0, cx - (wa.x + wa.width))
+    const dy = Math.max(wa.y - cy, 0, cy - (wa.y + wa.height))
+    const dist = dx * dx + dy * dy
+    if (dist < minDist) {
+      minDist = dist
+      nearest = wa
+    }
+  }
+  return nearest
+}
+
+function clampToScreen(x, y, w, h) {
+  const nearest = getNearestWorkArea(x + w / 2, y + h / 2)
+  const mLeft = Math.round(w * 0.25)
+  const mRight = Math.round(w * 0.25)
+  const mTop = Math.round(h * 0.6)
+  const mBot = Math.round(h * 0.04)
+  return {
+    x: Math.max(
+      nearest.x - mLeft,
+      Math.min(x, nearest.x + nearest.width - w + mRight),
+    ),
+    y: Math.max(
+      nearest.y - mTop,
+      Math.min(y, nearest.y + nearest.height - h + mBot),
+    ),
+  }
+}
+
+function loadPrefs() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PREFS_PATH, 'utf8'))
+    if (!raw || typeof raw !== 'object') return null
+    for (const key of ['x', 'y']) {
+      if (key in raw && (typeof raw[key] !== 'number' || !isFinite(raw[key])))
+        delete raw[key]
+    }
+    return raw
+  } catch {
+    return null
+  }
+}
+
+function saveWindowBounds(win) {
+  if (!win || win.isDestroyed()) return
+  const { x, y, width, height } = win.getBounds()
+  try {
+    fs.writeFileSync(PREFS_PATH, JSON.stringify({ x, y, width, height }))
+  } catch {}
+}
+
+function getOpenClawGatewayUrl() {
+  return (
+    process.env.OPENCLAW_GATEWAY_URL?.trim() ||
+    readOpenclawDiskPrefs()?.url ||
+    ''
+  )
+}
+
+function getOpenClawToken() {
+  return (
+    process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
+    process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() ||
+    readOpenclawDiskPrefs()?.token ||
+    ''
+  )
+}
+
+/** Keep pet above normal windows (Windows DWM can drop z-order). */
+function startTopmostWatchdog(win) {
+  if (!isWin) return () => {}
+  const id = setInterval(() => {
+    if (win && !win.isDestroyed())
+      win.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL)
+  }, 5000)
+  return () => clearInterval(id)
+}
+
+function reapplyMacVisibility(win) {
+  if (!isMac || !win || win.isDestroyed()) return
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  win.setAlwaysOnTop(true, MAC_TOPMOST_LEVEL)
+}
+
+/** @type {BrowserWindow | null} */
+let mainWindow = null
+
+function createWindow() {
+  const prefs = loadPrefs()
+  const wa = screen.getPrimaryDisplay().workArea
+  let x = prefs?.x
+  let y = prefs?.y
+  const w = prefs?.width && prefs.width > 0 ? prefs.width : DEFAULT_W
+  const h = prefs?.height && prefs.height > 0 ? prefs.height : DEFAULT_H
+  if (typeof x !== 'number' || !isFinite(x))
+    x = wa.x + wa.width - w - 20
+  if (typeof y !== 'number' || !isFinite(y))
+    y = wa.y + wa.height - h - 20
+  const clamped = clampToScreen(x, y, w, h)
+
+  mainWindow = new BrowserWindow({
+    width: w,
+    height: h,
+    x: clamped.x,
+    y: clamped.y,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: !isMac,
+    fullscreenable: false,
+    enableLargerThanScreen: true,
+    ...(isLinux ? { type: LINUX_WINDOW_TYPE } : {}),
+    ...(isMac ? { type: 'panel', roundedCorners: false } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+    },
+  })
+
+  mainWindow.setFocusable(true)
+
+  if (isWin) mainWindow.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL)
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+  if (devUrl) {
+    console.log('[buddy-desktop] Dev load URL:', devUrl.trim())
+    mainWindow.webContents.on('console-message', (_e, level, message) => {
+      if (level >= 1) console.log(`[renderer][${level}]`, message)
+    })
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      console.error('buddy-desktop: failed to load', url, code, desc)
+    })
+    mainWindow.loadURL(devUrl.trim())
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  }
+
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (isWin) mainWindow.setAlwaysOnTop(true, WIN_TOPMOST_LEVEL)
+    if (isMac) reapplyMacVisibility(mainWindow)
+    if (isLinux) mainWindow.setSkipTaskbar(true)
+    mainWindow.showInactive()
+    console.log('[buddy-desktop] Window visible (ready-to-show)')
+  })
+
+  const stopWatch = startTopmostWatchdog(mainWindow)
+  mainWindow.on('closed', () => {
+    stopWatch()
+    mainWindow = null
+  })
+
+  mainWindow.on('move', () => saveWindowBounds(mainWindow))
+  mainWindow.on('resize', () => saveWindowBounds(mainWindow))
+
+  mainWindow.webContents.on('context-menu', (_e, params) => {
+    const menu = Menu.buildFromTemplate([
+      {
+        label: 'Quit',
+        click: () => app.quit(),
+      },
+    ])
+    menu.popup({ window: mainWindow })
+  })
+}
+
+app.whenReady().then(() => {
+  if (PRINT_PATHS_ONLY) {
+    printBuddyPathsJson()
+    app.quit()
+    return
+  }
+
+  applyBootstrapIfPending()
+
+  ipcMain.handle('buddy-get-profile', () => readProfileForRenderer())
+
+  ipcMain.handle('buddy-get-paths', () => ({
+    userData: app.getPath('userData'),
+    bootstrapPending: BOOTSTRAP_PENDING,
+    profile: PROFILE_PATH,
+    openclaw: OPENCLAW_PREFS_PATH,
+    bootstrapApplied: BOOTSTRAP_APPLIED,
+  }))
+
+  ipcMain.handle('buddy-resize', (event, width, height) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const w = Math.round(Math.min(Math.max(Number(width) || 0, 160), 1200))
+    const h = Math.round(Math.min(Math.max(Number(height) || 0, 96), 1000))
+    const [cw, ch] = win.getContentSize()
+    if (Math.abs(cw - w) <= 1 && Math.abs(ch - h) <= 1) return
+    win.setContentSize(w, h)
+  })
+
+  ipcMain.handle('buddy-chat', async (_event, payload) => {
+    try {
+      const userText = String(payload?.text ?? '').trim().slice(0, 12_000)
+      if (!userText)
+        return { ok: false, error: '内容为空' }
+
+      const openclawUrl = getOpenClawGatewayUrl()
+      const oct = getOpenClawToken()
+      if (!openclawUrl || !oct) {
+        return { ok: false, needOpenclawGuide: true }
+      }
+
+      const companionName = String(
+        payload?.companionName ?? 'Mochi',
+      ).slice(0, 64)
+      const personality = String(
+        payload?.personality ?? 'desktop',
+      ).slice(0, 200)
+      const system = buildSystemPrompt(companionName, personality)
+
+      const prior = chatSession.getHistory()
+      const messages = [
+        { role: 'system', content: system },
+        ...prior,
+        { role: 'user', content: userText },
+      ]
+
+      const agentId = process.env.OPENCLAW_AGENT_ID?.trim() || 'main'
+      const ocModel = process.env.OPENCLAW_MODEL?.trim() || 'openclaw/default'
+      const openaiUser = `buddy-desktop:${companionName}`
+
+      const text = await sendOpenClawChatCompletion({
+        baseUrl: openclawUrl,
+        token: oct,
+        agentId,
+        model: ocModel,
+        openaiUser,
+        messages,
+      })
+
+      chatSession.recordTurn(userText, text)
+      return { ok: true, text }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[buddy-chat]', msg)
+      return { ok: false, error: msg.slice(0, 1200) }
+    }
+  })
+
+  ipcMain.handle('buddy-openclaw-status', () => {
+    const url = getOpenClawGatewayUrl()
+    const token = getOpenClawToken()
+    return { configured: Boolean(url && token) }
+  })
+
+  ipcMain.handle('buddy-chat-reset', () => {
+    chatSession.reset()
+  })
+
+  ipcMain.handle('buddy-save-openclaw', (_e, payload) => {
+    try {
+      if (payload?.clear) {
+        clearOpenclawDiskPrefs()
+        return { ok: true }
+      }
+      let url = String(payload?.url ?? '').trim()
+      const token = String(payload?.token ?? '').trim()
+      if (!url || !token) {
+        return { ok: false, error: 'URL 与 Token 不能为空' }
+      }
+      if (!/^https?:\/\//i.test(url)) url = `http://${url}`
+      new globalThis.URL(url)
+      if (token.length > 8_000) {
+        return { ok: false, error: 'Token 过长' }
+      }
+      writeOpenclawDiskPrefs({ url, token })
+      return { ok: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: msg }
+    }
+  })
+
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (!isMac) app.quit()
+})

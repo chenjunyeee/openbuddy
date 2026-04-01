@@ -1,0 +1,360 @@
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { getGlobalConfig } from '@buddy/config.js'
+import {
+  BuddyStateProvider,
+  useAppState,
+  useSetAppState,
+} from './BuddyState'
+import { PetView } from './PetView'
+import {
+  getOpenclawHelpSteps,
+  OPENCLAW_LOCAL_DEFAULT_URL,
+} from '../openclawSetupZh'
+
+function isSlashPet(t: string): boolean {
+  return t === '/m' || t.startsWith('/m ')
+}
+
+function isSlashRandomPet(t: string): boolean {
+  return t === '/p' || t.startsWith('/p ')
+}
+
+function isSlashNight(t: string): boolean {
+  return t === '/c' || t.startsWith('/c ')
+}
+
+/** 「在想中」时输入框仅允许键入本地快捷指令的前缀或完整内容 */
+function isAllowedPetShortcutDraft(v: string): boolean {
+  if (v === '') return true
+  if (v === '/') return true
+  return /^\/[mc](\s.*)?$/i.test(v)
+}
+
+type OpenclawSlash =
+  | { kind: 'save'; url: string; token: string }
+  | { kind: 'clear' }
+  | { kind: 'help' }
+
+/** 单行若长得像「只填了网关没填 Token」则不要误当成 Token */
+function looksLikeOpenclawGatewayRefOnly(s: string): boolean {
+  const x = s.trim()
+  if (/^https?:\/\//i.test(x)) {
+    try {
+      new globalThis.URL(x)
+      return true
+    } catch {
+      return false
+    }
+  }
+  return /^([\w.-]+|\d{1,3}(?:\.\d{1,3}){3}):\d{2,5}$/u.test(x)
+}
+
+/** 本机：/openclaw Token | 远程：/openclaw 网关 URL Token | /openclaw clear | help */
+function parseOpenclawSlash(t: string): OpenclawSlash | null {
+  const s = t.trim()
+  if (!s.startsWith('/openclaw')) return null
+  const rest = s.slice('/openclaw'.length).trim()
+  if (rest === '' || rest === 'help' || rest === '?') return { kind: 'help' }
+  if (rest === 'clear') return { kind: 'clear' }
+  const sp = rest.search(/\s/u)
+  if (sp === -1) {
+    if (looksLikeOpenclawGatewayRefOnly(rest)) return { kind: 'help' }
+    return { kind: 'save', url: OPENCLAW_LOCAL_DEFAULT_URL, token: rest }
+  }
+  let url = rest.slice(0, sp).trim()
+  const token = rest.slice(sp + 1).trim()
+  if (!token) return { kind: 'help' }
+  if (!/^https?:\/\//i.test(url)) url = `http://${url}`
+  try {
+    new globalThis.URL(url)
+  } catch {
+    return { kind: 'help' }
+  }
+  return { kind: 'save', url, token }
+}
+
+const OPENCLAW_GUIDE_STEPS = getOpenclawHelpSteps()
+
+/** 底部：对白输入；/m 抚摸（不调用大模型） */
+function ChatDialogPanel(): React.ReactElement {
+  const setAppState = useSetAppState()
+  const chatLoading = useAppState(s => s.chatLoading)
+  const openclawGuideStep = useAppState(s => s.openclawGuideStep)
+  const openclawConfigured = useAppState(s => s.openclawConfigured)
+  const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    const api = window.buddyDesktop?.getOpenclawStatus
+    if (!api) return
+    void api().then(r => {
+      setAppState(s => ({
+        ...s,
+        openclawConfigured: Boolean(r?.configured),
+      }))
+    })
+  }, [setAppState])
+
+  const startOpenclawGuide = useCallback(() => {
+    setAppState(s => ({
+      ...s,
+      openclawGuideStep: 0,
+      chatBubble: OPENCLAW_GUIDE_STEPS[0],
+    }))
+  }, [setAppState])
+
+  const advanceOpenclawGuide = useCallback(() => {
+    setAppState(s => {
+      if (typeof s.openclawGuideStep !== 'number') return s
+      const i = s.openclawGuideStep
+      if (i >= OPENCLAW_GUIDE_STEPS.length - 1) {
+        return {
+          ...s,
+          openclawGuideStep: undefined,
+          chatBubble: undefined,
+        }
+      }
+      return {
+        ...s,
+        openclawGuideStep: i + 1,
+        chatBubble: OPENCLAW_GUIDE_STEPS[i + 1],
+      }
+    })
+  }, [setAppState])
+
+  const onPet = useCallback((): void => {
+    setAppState(s => ({ ...s, companionPetAt: Date.now() }))
+  }, [setAppState])
+
+  const send = useCallback(async (): Promise<void> => {
+    const t = draft.trim()
+    if (!t) return
+
+    if (isSlashPet(t)) {
+      setDraft('')
+      onPet()
+      return
+    }
+    if (isSlashRandomPet(t)) {
+      setDraft('')
+      setAppState(s => ({
+        ...s,
+        chatBubble: '随机换宠已关闭，外形由孵化固定。',
+      }))
+      return
+    }
+    if (isSlashNight(t)) {
+      setDraft('')
+      setAppState(s => ({ ...s, nightMode: !s.nightMode }))
+      return
+    }
+
+    if (chatLoading) return
+    setDraft('')
+
+    const ocSlash = parseOpenclawSlash(t)
+    if (ocSlash) {
+      const saveApi = window.buddyDesktop?.saveOpenclawConfig
+      if (!saveApi) {
+        setAppState(s => ({
+          ...s,
+          chatBubble: '仅 Electron 内可保存 OpenClaw 配置。',
+        }))
+        return
+      }
+      if (ocSlash.kind === 'help') {
+        const st = await window.buddyDesktop?.getOpenclawStatus?.()
+        if (st?.configured) {
+          setAppState(s => ({
+            ...s,
+            openclawConfigured: true,
+            openclawGuideStep: undefined,
+            chatBubble: '已连接，直接发消息即可。',
+          }))
+        } else {
+          startOpenclawGuide()
+        }
+        return
+      }
+      if (ocSlash.kind === 'clear') {
+        const r = await saveApi({ clear: true })
+        setAppState(s => ({
+          ...s,
+          openclawConfigured: false,
+          openclawGuideStep: undefined,
+          chatBubble: r.ok
+            ? '已清除本机保存的 OpenClaw 配置。'
+            : (r.error ?? '清除失败'),
+        }))
+        return
+      }
+      const r = await saveApi({
+        url: ocSlash.url,
+        token: ocSlash.token,
+      })
+      setAppState(s => ({
+        ...s,
+        openclawConfigured: r.ok ? true : s.openclawConfigured,
+        openclawGuideStep: r.ok ? undefined : s.openclawGuideStep,
+        chatBubble: r.ok
+          ? `已保存 OpenClaw：${ocSlash.url}（Token 已写入本机用户目录，勿录屏泄露）`
+          : (r.error ?? '保存失败'),
+      }))
+      return
+    }
+
+    setAppState(s => ({
+      ...s,
+      chatLoading: true,
+      chatBubble: undefined,
+      openclawGuideStep: undefined,
+    }))
+
+    const soul = getGlobalConfig().companion
+    const api = window.buddyDesktop?.sendChat
+    if (!api) {
+      setAppState(s => ({
+        ...s,
+        chatLoading: false,
+        chatBubble: '当前环境不支持对话（请用 Electron 运行）。',
+      }))
+      return
+    }
+
+    const r = await api({
+      text: t,
+      companionName: soul?.name ?? 'Mochi',
+      personality: soul?.personality ?? 'desktop',
+    })
+
+    setAppState(s => ({
+      ...s,
+      chatLoading: false,
+      ...(r.needOpenclawGuide
+        ? {
+            openclawGuideStep: 0,
+            chatBubble: OPENCLAW_GUIDE_STEPS[0],
+          }
+        : {
+            chatBubble: r.ok ? (r.text ?? '') : (r.error ?? '请求失败'),
+          }),
+    }))
+  }, [chatLoading, draft, onPet, setAppState])
+
+  const inputPlaceholder = useMemo((): string => {
+    const tail = ' · /m /c'
+    if (chatLoading) return '在想中：仅可 /m /c'
+    if (openclawConfigured) return `Enter 发送${tail}`
+    if (typeof openclawGuideStep === 'number')
+      return `引导中：留空 Enter 下一步${tail}`
+    return `Enter 发送${tail}`
+  }, [chatLoading, openclawConfigured, openclawGuideStep])
+
+  const onDraftChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
+      const value = e.target.value
+      if (!chatLoading) {
+        setDraft(value)
+        return
+      }
+      setDraft(prev => (isAllowedPetShortcutDraft(value) ? value : prev))
+    },
+    [chatLoading],
+  )
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (typeof openclawGuideStep === 'number' && !draft.trim()) {
+        advanceOpenclawGuide()
+        return
+      }
+      void send()
+    }
+  }
+
+  return (
+    <div className="chat-dialog-panel surface-card" role="dialog" aria-label="对桌宠说话">
+      <textarea
+        className="chat-dialog-input"
+        rows={1}
+        value={draft}
+        placeholder={inputPlaceholder}
+        aria-label="消息输入，Enter 发送"
+        onChange={onDraftChange}
+        onKeyDown={onKeyDown}
+      />
+    </div>
+  )
+}
+
+/** 单条气泡高度波动预留，减轻 setContentSize 触发整块重绘 */
+const BUBBLE_STACK_RESERVE_PX = 160
+const RESIZE_DEBOUNCE_MS = 40
+const RESIZE_MARGIN = 8
+
+function Shell(): React.ReactElement {
+  const nightMode = useAppState(s => Boolean(s.nightMode))
+  const shellRef = useRef<HTMLDivElement>(null)
+  const resizeTick = useRef(0)
+
+  useLayoutEffect(() => {
+    const el = shellRef.current
+    if (!el) return
+
+    const apply = (): void => {
+      const api = window.buddyDesktop?.resizeToFit
+      if (!api) return
+      const r = el.getBoundingClientRect()
+      const w = Math.ceil(r.width) + RESIZE_MARGIN * 2
+      const h =
+        Math.ceil(r.height + BUBBLE_STACK_RESERVE_PX) + RESIZE_MARGIN * 2
+      void api(w, h)
+    }
+
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(resizeTick.current)
+      resizeTick.current = window.setTimeout(apply, RESIZE_DEBOUNCE_MS)
+    })
+    ro.observe(el)
+    apply()
+    return () => {
+      ro.disconnect()
+      window.clearTimeout(resizeTick.current)
+    }
+  }, [])
+
+  return (
+    <div
+      className={nightMode ? 'shell night-mode' : 'shell'}
+      ref={shellRef}
+    >
+      <div className="pet-column">
+        <div className="pet-row-outer">
+          <div className="pet-drag">
+            <PetView />
+          </div>
+        </div>
+        <ChatDialogPanel />
+      </div>
+    </div>
+  )
+}
+
+export default function App({
+  initialHatchLocked = false,
+}: {
+  initialHatchLocked?: boolean
+}): React.ReactElement {
+  return (
+    <BuddyStateProvider initialState={{ hatchLocked: initialHatchLocked }}>
+      <Shell />
+    </BuddyStateProvider>
+  )
+}

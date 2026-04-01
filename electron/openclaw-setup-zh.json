@@ -1,0 +1,14 @@
+{
+  "docUrl": "https://docs.clawd.bot/gateway/openai-http-api",
+  "localDefaultUrl": "http://127.0.0.1:18789",
+  "helpSteps": [
+    "连接引导：输入框留空时按 Enter 下一步；有内容时 Enter 会发消息。",
+    "① 网关：在 OpenClaw 里看 HTTP 根地址，本机多为 127.0.0.1:18789。",
+    "② Token：看 gateway.auth；token 用密钥，password 用密码，别用外站 Key。",
+    "③ 打开 chatCompletions.enabled，保存并重启（仅 CLI 正常也会 404）。",
+    "④ 用 curl 访问 …/v1/models，加上 Bearer，应返回 JSON。",
+    "⑤ 本机：/openclaw 你的Token；远程：/openclaw 网关根地址 Token。",
+    "⑥ 官方说明：{docUrl}",
+    "以上完成后即可对话。输入框留空再按 Enter，关闭本引导。"
+  ]
+}
