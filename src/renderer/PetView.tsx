@@ -7,7 +7,7 @@ import {
   BUDDY_RARITY_RGB_DARK,
   BUDDY_RARITY_RGB_LIGHT,
 } from '@buddy/types.js'
-import { useAppState } from './BuddyState'
+import { useAppState, useSetAppState } from './BuddyState'
 
 const TICK_MS = 500
 const PET_BURST_MS = 2500
@@ -15,6 +15,10 @@ const PET_BURST_MS = 2500
 const IDLE_SEQUENCE = [
   0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 2, 0, 0, 0,
 ]
+
+/** 装饰行：对 `SPECIES` 中任意种族共用，不分支 species。 */
+const SLEEP_ZZZ = ['    z      ', '   z z     ', '  Z   z    ']
+const PLAYFUL_SPARKLES = [' · ✦ · ✦  ', ' ✦  ·  ✦  ', '  · ✦  ·   ']
 
 const H = '♥'
 const PET_HEARTS = [
@@ -45,6 +49,23 @@ function wrapBubbleText(text: string): string[] {
   return lines
 }
 
+/** 流式输出：不整体 trim，避免前半段被吃掉 */
+function wrapBubbleStreaming(text: string): string[] {
+  const lines: string[] = []
+  let i = 0
+  const t = text.replace(/\r/g, '')
+  while (i < t.length && lines.length < BUBBLE_MAX_LINES) {
+    lines.push(t.slice(i, i + BUBBLE_LINE_CHARS))
+    i += BUBBLE_LINE_CHARS
+  }
+  if (i < t.length && lines.length > 0) {
+    const last = lines[lines.length - 1]!
+    lines[lines.length - 1] =
+      last.slice(0, Math.max(0, BUBBLE_LINE_CHARS - 1)) + '…'
+  }
+  return lines
+}
+
 function PetBubble({
   loading,
   text,
@@ -52,12 +73,19 @@ function PetBubble({
   loading: boolean
   text: string | undefined
 }): React.ReactElement {
-  const lines = loading || !text ? [] : wrapBubbleText(text)
+  const raw = text ?? ''
+  const streaming = loading && raw.length > 0
+  const linesLoadingOnly = loading && !streaming
+  const lines = streaming
+    ? wrapBubbleStreaming(raw)
+    : !loading && raw.trim()
+      ? wrapBubbleText(raw)
+      : []
 
   return (
     <div className="pet-chat-bubble surface-card" aria-live="polite">
       <div className="pet-chat-bubble-body">
-        {loading ? (
+        {linesLoadingOnly ? (
           <div className="pet-chat-bubble-loading">
             <span className="pet-chat-bubble-loading-label">在想中</span>
             <span className="pet-chat-bubble-dots" aria-hidden>
@@ -66,13 +94,17 @@ function PetBubble({
               <span>.</span>
             </span>
           </div>
-        ) : (
-          lines.map((line, i) => (
-            <div key={i} className="pet-chat-bubble-line">
-              {line || ' '}
-            </div>
-          ))
-        )}
+        ) : null}
+        {lines.map((line, i) => (
+          <div key={i} className="pet-chat-bubble-line">
+            {line || ' '}
+            {streaming && i === lines.length - 1 ? (
+              <span className="pet-chat-stream-cursor" aria-hidden>
+                ▍
+              </span>
+            ) : null}
+          </div>
+        ))}
       </div>
       <div className="pet-chat-bubble-tail" aria-hidden />
     </div>
@@ -80,19 +112,13 @@ function PetBubble({
 }
 
 export function PetView(): React.ReactElement {
+  const setAppState = useSetAppState()
   const petAt = useAppState(s => s.companionPetAt)
   const chatLoading = useAppState(s => s.chatLoading)
   const chatBubble = useAppState(s => s.chatBubble)
   const prevChatLoading = useRef(false)
   const replyBurstUntil = useRef(0)
   const [tick, setTick] = useState(0)
-  const [{ petStartTick, forPetAt }, setPetStart] = useState({
-    petStartTick: 0,
-    forPetAt: petAt,
-  })
-  if (petAt !== forPetAt) {
-    setPetStart({ petStartTick: tick, forPetAt: petAt })
-  }
 
   useEffect(() => {
     const t = setInterval(() => setTick(x => x + 1), TICK_MS)
@@ -107,7 +133,17 @@ export function PetView(): React.ReactElement {
     }
   }, [chatLoading, chatBubble])
 
+  useEffect(() => {
+    const sub = window.buddyDesktop?.subscribeWindowMoved
+    if (!sub) return
+    return sub(() => {
+      setAppState(s => ({ ...s, companionPetAt: Date.now() }))
+    })
+  }, [setAppState])
+
   const nightMode = useAppState(s => Boolean(s.nightMode))
+  /** 与种族无关：任意 `companion.species` 均适用同一套 sleep / playful 逻辑。 */
+  const petMood = useAppState(s => s.petMood)
   const companion = getCompanion()
   if (!companion) {
     return (
@@ -121,25 +157,38 @@ export function PetView(): React.ReactElement {
   const rarityInk = nightMode
     ? BUDDY_RARITY_RGB_DARK[companion.rarity]
     : BUDDY_RARITY_RGB_LIGHT[companion.rarity]
-  const petAge = petAt ? tick - petStartTick : Infinity
-  const petting = petAge * TICK_MS < PET_BURST_MS
+  /** 拖窗会高频刷新 `companionPetAt`，不得再绑「渲染里 reset petStartTick」否则 petAge 归零、爱心与精灵会闪 */
+  const petting =
+    petAt != null && Date.now() - petAt < PET_BURST_MS
   const replyBurstActive =
     !chatLoading &&
     Date.now() < replyBurstUntil.current &&
     Boolean(chatBubble?.trim())
-  const excited = petting || Boolean(chatLoading) || replyBurstActive
+  /** 对话兴奋态；抚摸单独叠加，不与睡觉/星星装饰互斥 */
+  const chatExcited = Boolean(chatLoading) || replyBurstActive
+  const spriteFast = petting || chatExcited
 
   const frameCount = spriteFrameCount(companion.species)
-  const heartLine = petting ? PET_HEARTS[petAge % PET_HEARTS.length]! : null
+  const heartLine = petting ? PET_HEARTS[tick % PET_HEARTS.length]! : null
+
+  let idleSeqIndex = tick % IDLE_SEQUENCE.length
+  if (!spriteFast) {
+    if (petMood === 'sleep') {
+      idleSeqIndex = Math.floor(tick / 2) % IDLE_SEQUENCE.length
+    } else if (petMood === 'playful') {
+      idleSeqIndex = (tick * 2) % IDLE_SEQUENCE.length
+    }
+  }
+
   let spriteFrame: number
   let blink = false
-  if (excited) {
+  if (spriteFast) {
     spriteFrame = tick % frameCount
   } else {
-    const step = IDLE_SEQUENCE[tick % IDLE_SEQUENCE.length]!
+    const step = IDLE_SEQUENCE[idleSeqIndex]!
     if (step === -1) {
       spriteFrame = 0
-      blink = true
+      blink = petMood !== 'sleep'
     } else {
       spriteFrame = step % frameCount
     }
@@ -148,7 +197,19 @@ export function PetView(): React.ReactElement {
   const bodyLines = renderSprite(companion, spriteFrame).map(line =>
     blink ? line.replaceAll(companion.eye, '-') : line,
   )
-  const spriteLines = heartLine ? [heartLine, ...bodyLines] : bodyLines
+
+  const moodPrefix: string[] = []
+  if (petMood === 'sleep' && !chatLoading) {
+    moodPrefix.push(SLEEP_ZZZ[tick % SLEEP_ZZZ.length]!)
+  } else if (petMood === 'playful' && !chatLoading) {
+    moodPrefix.push(PLAYFUL_SPARKLES[tick % PLAYFUL_SPARKLES.length]!)
+  }
+
+  const spriteLines = [
+    ...moodPrefix,
+    ...(heartLine ? [heartLine] : []),
+    ...bodyLines,
+  ]
 
   const showBubble =
     Boolean(chatLoading) || Boolean(chatBubble != null && chatBubble.trim())
@@ -161,35 +222,31 @@ export function PetView(): React.ReactElement {
         ) : null}
         <pre
           className="sprite-pre"
-          style={{
-            margin: 0,
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            fontSize: 13,
-            lineHeight: 1.15,
-            fontWeight: 400,
-          }}
+          title="拖动移窗时会抚摸"
         >
-          {spriteLines.map((line, i) => (
-            <React.Fragment key={i}>
-              {i > 0 ? '\n' : null}
-              <span
-                style={{
-                  color: Boolean(heartLine) && i === 0 ? heartInk : rarityInk,
-                }}
-              >
-                {line}
-              </span>
-            </React.Fragment>
-          ))}
+          {spriteLines.map((line, i) => {
+            const moodLines = moodPrefix.length
+            const heartIdx = moodLines
+            const isHeartRow = Boolean(heartLine) && i === heartIdx
+            const isMoodRow = i < moodLines
+            return (
+              <React.Fragment key={i}>
+                {i > 0 ? '\n' : null}
+                <span
+                  style={{
+                    color: isHeartRow ? heartInk : rarityInk,
+                    opacity: isMoodRow ? 0.92 : 1,
+                  }}
+                >
+                  {line}
+                </span>
+              </React.Fragment>
+            )
+          })}
           {'\n'}
           <span
-            style={{
-              fontStyle: 'italic',
-              opacity: 0.78,
-              fontWeight: 400,
-              color: rarityInk,
-            }}
+            className="sprite-pre-name"
+            style={{ color: rarityInk }}
           >
             {companion.name}
           </span>

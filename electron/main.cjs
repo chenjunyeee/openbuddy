@@ -5,6 +5,7 @@ require('./load-env.cjs')
 const { buildSystemPrompt } = require('./buddy-prompt.cjs')
 const chatSession = require('./chat-session.cjs')
 const {
+  streamOpenClawChatCompletion,
   sendOpenClawChatCompletion,
   normalizeOpenClawGatewayBaseUrl,
 } = require('./openclaw-chat.cjs')
@@ -281,6 +282,80 @@ function clampToScreen(x, y, w, h) {
   }
 }
 
+/** 逻辑右下角（屏幕坐标）；连续 buddy-resize 用存值而非每次 getBounds，减轻取整回读导致的水平漂移 */
+let buddyResizeAnchorR = null
+let buddyResizeAnchorB = null
+const BUDDY_RESIZE_ANCHOR_DRIFT = 12
+
+/**
+ * 缩放时固定窗口右下角（与渲染进程测量一致），避免因 clampToScreen 把顶边下移而「整块 UI 被挤到屏幕下方」。
+ * 若理想高度会超出工作区顶部，则缩小 h（内容可能裁切），而不是改变底边纵向位置。
+ */
+function buddyResizeWithAnchoredBottomRight(win, reqW, reqH) {
+  const MIN_W = 160
+  const MIN_H = 96
+  const MAX_W = 1200
+  const MAX_H_RAW = 4096
+  const PAD = 8
+
+  let w = Math.round(
+    Math.min(Math.max(Number(reqW) || 0, MIN_W), MAX_W),
+  )
+  let h = Math.round(
+    Math.min(Math.max(Number(reqH) || 0, MIN_H), MAX_H_RAW),
+  )
+
+  const b = win.getBounds()
+  const br = b.x + b.width
+  const bb = b.y + b.height
+  if (
+    buddyResizeAnchorR == null ||
+    buddyResizeAnchorB == null ||
+    Math.abs(br - buddyResizeAnchorR) > BUDDY_RESIZE_ANCHOR_DRIFT ||
+    Math.abs(bb - buddyResizeAnchorB) > BUDDY_RESIZE_ANCHOR_DRIFT
+  ) {
+    buddyResizeAnchorR = br
+    buddyResizeAnchorB = bb
+  }
+  const anchorRight = buddyResizeAnchorR
+  const anchorBottom = buddyResizeAnchorB
+
+  const wa = getNearestWorkArea(anchorRight - 12, anchorBottom - 12)
+  const workLeft = wa.x + PAD
+  const workRight = wa.x + wa.width - PAD
+  const workTop = wa.y + PAD
+  const workBottom = wa.y + wa.height - PAD
+
+  const effectiveBottom = Math.min(anchorBottom, workBottom)
+  const effectiveRight = Math.min(anchorRight, workRight)
+
+  // —— 竖直：底边尽量仍为 effectiveBottom；顶边不得高于 workTop（否则缩高度）
+  let ny = Math.round(effectiveBottom - h)
+  if (ny < workTop) {
+    h = Math.max(MIN_H, Math.floor(effectiveBottom - workTop))
+    ny = Math.round(effectiveBottom - h)
+  }
+
+  // —— 水平：与竖直对称，固定「可视右缘」为 effectiveRight；左沿不得小于 workLeft 则缩 w
+  // 避免旧逻辑先缩 w 再 nx=workRight-w 导致右缘在 workRight 与 anchorRight 之间来回切、整块被向右挤
+  let nx = Math.round(effectiveRight - w)
+  if (nx < workLeft) {
+    w = Math.max(MIN_W, Math.floor(effectiveRight - workLeft))
+    nx = Math.round(effectiveRight - w)
+  }
+
+  suppressMovePetForResize = true
+  try {
+    win.setBounds({ x: nx, y: ny, width: w, height: h })
+    buddyResizeAnchorR = nx + w
+    buddyResizeAnchorB = ny + h
+  } finally {
+    setTimeout(() => {
+      suppressMovePetForResize = false
+    }, 200)
+  }
+}
+
 function loadPrefs() {
   try {
     const raw = JSON.parse(fs.readFileSync(PREFS_PATH, 'utf8'))
@@ -339,7 +414,14 @@ function reapplyMacVisibility(win) {
 /** @type {BrowserWindow | null} */
 let mainWindow = null
 
+/** 用户拖窗 → 渲染层抚摸；程序化 `setBounds`（resize）也会触发 `move`，需忽略 */
+let suppressMovePetForResize = false
+let buddyWindowMovePetAllowed = false
+let lastBuddyWindowMovePetSent = 0
+
 function createWindow() {
+  buddyWindowMovePetAllowed = false
+  lastBuddyWindowMovePetSent = 0
   const prefs = loadPrefs()
   const wa = screen.getPrimaryDisplay().workArea
   let x = prefs?.x
@@ -401,6 +483,9 @@ function createWindow() {
     if (isMac) reapplyMacVisibility(mainWindow)
     if (isLinux) mainWindow.setSkipTaskbar(true)
     mainWindow.showInactive()
+    setTimeout(() => {
+      buddyWindowMovePetAllowed = true
+    }, 500)
     console.log('[buddy-desktop] Window visible (ready-to-show)')
   })
 
@@ -408,9 +493,25 @@ function createWindow() {
   mainWindow.on('closed', () => {
     stopWatch()
     mainWindow = null
+    buddyResizeAnchorR = null
+    buddyResizeAnchorB = null
   })
 
-  mainWindow.on('move', () => saveWindowBounds(mainWindow))
+  mainWindow.on('move', () => {
+    saveWindowBounds(mainWindow)
+    if (
+      !buddyWindowMovePetAllowed ||
+      suppressMovePetForResize ||
+      !mainWindow ||
+      mainWindow.isDestroyed()
+    )
+      return
+    const now = Date.now()
+    if (now - lastBuddyWindowMovePetSent < 80) return
+    lastBuddyWindowMovePetSent = now
+    const wc = mainWindow.webContents
+    if (!wc.isDestroyed()) wc.send('buddy-window-moved')
+  })
   mainWindow.on('resize', () => saveWindowBounds(mainWindow))
 
   mainWindow.webContents.on('context-menu', (_e, params) => {
@@ -446,14 +547,14 @@ app.whenReady().then(() => {
   ipcMain.handle('buddy-resize', (event, width, height) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
+    const b = win.getBounds()
     const w = Math.round(Math.min(Math.max(Number(width) || 0, 160), 1200))
-    const h = Math.round(Math.min(Math.max(Number(height) || 0, 96), 1000))
-    const [cw, ch] = win.getContentSize()
-    if (Math.abs(cw - w) <= 1 && Math.abs(ch - h) <= 1) return
-    win.setContentSize(w, h)
+    const h = Math.round(Math.min(Math.max(Number(height) || 0, 96), 4096))
+    if (Math.abs(b.width - w) <= 1 && Math.abs(b.height - h) <= 1) return
+    buddyResizeWithAnchoredBottomRight(win, w, h)
   })
 
-  ipcMain.handle('buddy-chat', async (_event, payload) => {
+  ipcMain.handle('buddy-chat', async (event, payload) => {
     try {
       const userText = String(payload?.text ?? '').trim().slice(0, 12_000)
       if (!userText)
@@ -484,20 +585,60 @@ app.whenReady().then(() => {
       const ocModel = process.env.OPENCLAW_MODEL?.trim() || 'openclaw/default'
       const openaiUser = `buddy-desktop:${companionName}`
 
-      const text = await sendOpenClawChatCompletion({
-        baseUrl: openclawUrl,
-        token: oct,
-        agentId,
-        model: ocModel,
-        openaiUser,
-        messages,
-      })
+      const wc = event.sender
+      const streamSessionId = Number(payload?.streamSessionId) || 0
+      const safeSend = (payload) => {
+        if (!wc.isDestroyed())
+          wc.send('buddy-chat-stream', { streamSessionId, ...payload })
+      }
 
+      const useStream = process.env.OPENCLAW_STREAM !== '0'
+      let text
+      if (useStream) {
+        text = await streamOpenClawChatCompletion(
+          {
+            baseUrl: openclawUrl,
+            token: oct,
+            agentId,
+            model: ocModel,
+            openaiUser,
+            messages,
+          },
+          {
+            onDelta(delta) {
+              if (delta) safeSend({ kind: 'delta', delta })
+            },
+          },
+        )
+      } else {
+        text = await sendOpenClawChatCompletion({
+          baseUrl: openclawUrl,
+          token: oct,
+          agentId,
+          model: ocModel,
+          openaiUser,
+          messages,
+        })
+      }
+
+      safeSend({ kind: 'done' })
       chatSession.recordTurn(userText, text)
       return { ok: true, text }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[buddy-chat]', msg)
+      try {
+        if (!event.sender.isDestroyed()) {
+          const sid = Number(payload?.streamSessionId) || 0
+          event.sender.send('buddy-chat-stream', {
+            streamSessionId: sid,
+            kind: 'error',
+            message: msg.slice(0, 1200),
+          })
+        }
+      } catch (_) {
+        /* ignore */
+      }
       return { ok: false, error: msg.slice(0, 1200) }
     }
   })

@@ -45,6 +45,11 @@ export const mushroom = c(
   0x6d,
 ) as 'mushroom'
 export const chonk = c(0x63, 0x68, 0x6f, 0x6e, 0x6b) as 'chonk'
+export const fox = c(0x66, 0x6f, 0x78) as 'fox'
+export const frog = c(0x66, 0x72, 0x6f, 0x67) as 'frog'
+export const seal = c(0x73, 0x65, 0x61, 0x6c) as 'seal'
+export const bee = c(0x62, 0x65, 0x65) as 'bee'
+export const bear = c(0x62, 0x65, 0x61, 0x72) as 'bear'
 
 export const SPECIES = [
   duck,
@@ -64,6 +69,11 @@ export const SPECIES = [
   robot,
   rabbit,
   mushroom,
+  fox,
+  frog,
+  seal,
+  bee,
+  bear,
   chonk,
 ] as const
 export type Species = (typeof SPECIES)[number]
@@ -173,6 +183,16 @@ export type BuddyAppState = {
   openclawConfigured?: boolean
   /** 主进程：buddy-bootstrap-pending 已应用后锁定，不可再孵化 */
   hatchLocked?: boolean
-  /** /c 夜间模式 */
+  /** /c：切换夜间配色（桌宠与面板） */
   nightMode?: boolean
+  /**
+   * 自动：`sleep`＝≥5min 无对话；`playful`＝连续对话满 5min（轮次间隔≤1min）且末次活动＜1min。
+   */
+  petMood?: 'sleep' | 'playful'
+  /** 最近一次用户发话或助手回复结束的时间戳（用于自动心情） */
+  lastConversationActivityAt?: number
+  /**
+   * 当前「连续对话」段的起点：与上次活动时间间隔超过 1min 则重开一段。
+   */
+  dialogueStreakStartAt?: number
 }

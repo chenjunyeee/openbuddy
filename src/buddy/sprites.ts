@@ -1,6 +1,8 @@
 import type { CompanionBones, Eye, Hat, Species } from './types.js'
 import {
   axolotl,
+  bear,
+  bee,
   blob,
   cactus,
   capybara,
@@ -8,6 +10,8 @@ import {
   chonk,
   dragon,
   duck,
+  fox,
+  frog,
   ghost,
   goose,
   mushroom,
@@ -16,6 +20,7 @@ import {
   penguin,
   rabbit,
   robot,
+  seal,
   snail,
   turtle,
 } from './types.js'
@@ -415,6 +420,121 @@ const BODIES: Record<Species, string[][]> = {
       '   |____|   ',
     ],
   ],
+  [fox]: [
+    [
+      '            ',
+      '    /\\_/\\   ',
+      '   ( {E} {E} ) ',
+      '   (  ω  )  ',
+      '   /|  |\\   ',
+    ],
+    [
+      '            ',
+      '    /\\_/\\   ',
+      '   ( {E} {E} ) ',
+      '   (  ω  )  ',
+      '    |\\ /|   ',
+    ],
+    [
+      '   ~        ',
+      '    /\\_/\\   ',
+      '   ( {E} {E} ) ',
+      '   (  ω  )  ',
+      '   /|  |\\   ',
+    ],
+  ],
+  [frog]: [
+    [
+      '            ',
+      '   @    @   ',
+      '  ( {E}  {E} )',
+      '   \\====/   ',
+      '   ^^  ^^   ',
+    ],
+    [
+      '            ',
+      '   @    @   ',
+      '  ( {E}  {E} )',
+      '   \\-==-/   ',
+      '   ^^  ^^   ',
+    ],
+    [
+      '            ',
+      '  @      @  ',
+      '  ( {E}  {E} )',
+      '   \\====/   ',
+      '  ^^    ^^  ',
+    ],
+  ],
+  [seal]: [
+    [
+      '            ',
+      '   .----.   ',
+      '  (_{E}..{E}_)',
+      '   \\~~~~/   ',
+      '    `````   ',
+    ],
+    [
+      '            ',
+      '   .----.   ',
+      '  (_{E}..{E}_)',
+      '   \\~~~~/   ',
+      '    `````   ',
+    ],
+    [
+      '     ~      ',
+      '   .----.   ',
+      '  (_{E}..{E}_)',
+      '   \\~~~~/   ',
+      '    `````   ',
+    ],
+  ],
+  [bee]: [
+    [
+      '            ',
+      '    *  *    ',
+      '   ({E}{E})   ',
+      '  /|====|\\ ',
+      '   \\|  |/  ',
+    ],
+    [
+      '            ',
+      '    *  *    ',
+      '   ({E}{E})   ',
+      '  /|-==-|\\ ',
+      '   \\|  |/  ',
+    ],
+    [
+      '      ~     ',
+      '    *  *    ',
+      '   ({E}{E})   ',
+      '  /|====|\\ ',
+      '   \\|  |/  ',
+    ],
+  ],
+  [bear]: [
+    [
+      '            ',
+      '  (\\_/)(\\_/) ',
+      ' ( {E}  {E}  )',
+      '  (  ..  )  ',
+      ' ((    ))  ',
+    ],
+    [
+      '            ',
+      '  (|_/)(\\_/)',
+      ' ( {E}  {E}  )',
+      '  (  ..  )  ',
+      ' ((    ))  ',
+    ],
+    [
+      '            ',
+      '  (\\_/)(\\_/)',
+      ' ( {E}  {E}  )',
+      '  ( .  . )  ',
+      ' ((    ))  ',
+    ],
+  ],
   [chonk]: [
     [
       '            ',
@@ -508,6 +628,16 @@ export function renderFace(bones: CompanionBones): string {
       return `(${eye}..${eye})`
     case mushroom:
       return `|${eye}  ${eye}|`
+    case fox:
+      return `/${eye}ω${eye}\\`
+    case frog:
+      return `(${eye}~${eye})`
+    case seal:
+      return `_${eye}..${eye}_`
+    case bee:
+      return `*${eye}${eye}*`
+    case bear:
+      return `(${eye}..${eye})`
     case chonk:
       return `(${eye}.${eye})`
   }

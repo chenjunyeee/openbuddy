@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('buddyDesktop', {
   sendChat(payload) {
     return ipcRenderer.invoke('buddy-chat', payload)
   },
+  subscribeChatStream(handler) {
+    const fn = (_e, payload) => handler(payload)
+    ipcRenderer.on('buddy-chat-stream', fn)
+    return () => ipcRenderer.removeListener('buddy-chat-stream', fn)
+  },
+  subscribeWindowMoved(handler) {
+    const fn = () => handler()
+    ipcRenderer.on('buddy-window-moved', fn)
+    return () => ipcRenderer.removeListener('buddy-window-moved', fn)
+  },
   resetChatSession() {
     return ipcRenderer.invoke('buddy-chat-reset')
   },

@@ -6,10 +6,21 @@ declare global {
       platform: NodeJS.Platform
       isDev: boolean
       resizeToFit?: (width: number, height: number) => Promise<void>
+      subscribeChatStream?: (
+        handler: (payload: {
+          streamSessionId: number
+          kind: 'delta' | 'done' | 'error'
+          delta?: string
+          message?: string
+        }) => void,
+      ) => () => void
+      subscribeWindowMoved?: (handler: () => void) => () => void
       sendChat?: (payload: {
         text: string
         companionName: string
         personality: string
+        /** 与流式 IPC 对齐，防重复订阅或并发错序 */
+        streamSessionId?: number
       }) => Promise<{
         ok: boolean
         text?: string

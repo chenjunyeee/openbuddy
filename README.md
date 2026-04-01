@@ -20,7 +20,7 @@
 | 对话（可选） | 配置 OpenClaw 网关 URL + Token 后，经主进程转发请求（`electron/openclaw-chat.cjs` 等） |
 | 自动化引导 | 通过写入 `userData` 下的 bootstrap 待消费文件完成「配网关 + 孵化」，见 `docs/openclaw-bootstrap.md` |
 
-命令行快捷（应用内输入框，具体解析在 `App.tsx`）：例如 `/openclaw` 配置、`/m` `/p` `/c` 等与宠相关的本地指令——以源码为准。
+应用内输入与交互（以 `App.tsx` / `PetView.tsx` / `electron/main.cjs` 为准）：例如 `/openclaw`、夜间 **`/c`**、**拖动窗/精灵**即抚摸（CSS drag + 主进程 `move` IPC）、`/p` 等。
 
 ## 技术栈
 
@@ -90,6 +90,7 @@ npm run test:openclaw   # OpenClaw 相关快速检测脚本
 
 - [OpenClaw 经纪 / 代理跑通](./docs/OPENCLAW_AGENT_RUNBOOK.md)
 - [Bootstrap 文件格式与 pending](./docs/openclaw-bootstrap.md)
+- [桌宠种族与心情汇总](./docs/PET_SPECIES_AND_MOODS.md)
 
 ## 许可与贡献
 
