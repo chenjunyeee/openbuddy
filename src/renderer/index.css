@@ -544,7 +544,7 @@ body {
   right: 100%;
   margin-right: 8px;
   z-index: 2;
-  width: 220px;
+  width: min(280px, 78vw);
   box-sizing: border-box;
   -webkit-app-region: no-drag;
   display: flex;
@@ -611,6 +611,11 @@ body {
   font-size: 12px;
   line-height: 1.38;
   color: #141418;
+  /* 正文按宽度自然换行；极高窗口内滚动读全文，避免主进程抬高到顶后整块裁切 */
+  max-height: min(50vh, 380px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pet-chat-bubble-line {

@@ -1,6 +1,4 @@
-/** `/help` 与普通聊天气泡共用 `PetBubble`，仅正文固定；行数上限略高于普通气泡以免截断 */
-export const HELP_BUBBLE_MAX_LINES = 36
-
+/** `/help` 与普通聊天气泡共用 `PetBubble`，仅正文为固定多行说明文案 */
 export const HELP_BUBBLE_TEXT = `「操作说明」
 
 Enter：发送（需已配置

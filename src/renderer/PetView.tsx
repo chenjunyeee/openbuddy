@@ -9,7 +9,6 @@ import {
   BUDDY_RARITY_RGB_LIGHT,
 } from '@buddy/types.js'
 import { CompanionStatsPanel } from './CompanionStatsPanel'
-import { HELP_BUBBLE_MAX_LINES, HELP_BUBBLE_TEXT } from './helpBubbleText'
 import { useAppState, useSetAppState } from './BuddyState'
 
 /** 是否仍有「气泡内容」（用于保留锚点占位，失焦隐藏时不卸载以免窗口伸缩导致精灵位移） */
@@ -65,104 +64,20 @@ const PET_HEARTS = [
 /** 与爱心行同宽同高、占位避免摸宠时增删行触发 resize ↔ setBounds 微抖 */
 const PET_HEART_ROW_PLACEHOLDER = ' '.repeat(PET_HEARTS[0]!.length)
 
-const BUBBLE_LINE_CHARS = 20
-const BUBBLE_MAX_LINES = 10
-
-/** 按字符断行；支持 `\n` 分段；`maxLines` 用于 /help 等较长固定文案 */
-function wrapBubbleText(
-  text: string,
-  maxLines: number = BUBBLE_MAX_LINES,
-): string[] {
-  const lines: string[] = []
-  const parts = text.trim().split('\n')
-  let truncated = false
-  outer: for (let pi = 0; pi < parts.length; pi++) {
-    const part = parts[pi]!
-    if (lines.length >= maxLines) {
-      truncated = true
-      break
-    }
-    if (part === '') {
-      lines.push(' ')
-      if (lines.length >= maxLines) break
-      continue
-    }
-    let i = 0
-    while (i < part.length) {
-      if (lines.length >= maxLines) {
-        truncated = true
-        break outer
-      }
-      lines.push(part.slice(i, i + BUBBLE_LINE_CHARS))
-      i += BUBBLE_LINE_CHARS
-    }
-  }
-  if (truncated && lines.length > 0) {
-    const last = lines[lines.length - 1]!
-    lines[lines.length - 1] =
-      last.slice(0, Math.max(0, BUBBLE_LINE_CHARS - 1)) + '…'
-  }
-  return lines
-}
-
-/** 流式输出：不整体 trim；支持 `\n` */
-function wrapBubbleStreaming(
-  text: string,
-  maxLines: number = BUBBLE_MAX_LINES,
-): string[] {
-  const lines: string[] = []
-  const parts = text.replace(/\r/g, '').split('\n')
-  let truncated = false
-  outer: for (let pi = 0; pi < parts.length; pi++) {
-    const part = parts[pi]!
-    if (lines.length >= maxLines) {
-      truncated = true
-      break
-    }
-    if (part === '') {
-      lines.push(' ')
-      if (lines.length >= maxLines) break
-      continue
-    }
-    let i = 0
-    while (i < part.length) {
-      if (lines.length >= maxLines) {
-        truncated = true
-        break outer
-      }
-      lines.push(part.slice(i, i + BUBBLE_LINE_CHARS))
-      i += BUBBLE_LINE_CHARS
-    }
-  }
-  if (truncated && lines.length > 0) {
-    const last = lines[lines.length - 1]!
-    lines[lines.length - 1] =
-      last.slice(0, Math.max(0, BUBBLE_LINE_CHARS - 1)) + '…'
-  }
-  return lines
-}
-
 function PetBubble({
   loading,
   text,
   onClose,
-  maxLines,
 }: {
   loading: boolean
   text: string | undefined
   onClose?: () => void
-  /** 默认 `BUBBLE_MAX_LINES`；/help 等值更大以免截断 */
-  maxLines?: number
 }): React.ReactElement {
   const raw = text ?? ''
-  const lineCap = maxLines ?? BUBBLE_MAX_LINES
   const streaming = loading && raw.length > 0
   const linesLoadingOnly = loading && !streaming
-  const lines = streaming
-    ? wrapBubbleStreaming(raw, lineCap)
-    : !loading && raw.trim()
-      ? wrapBubbleText(raw, lineCap)
-      : []
+  const bodyText = streaming ? raw.replace(/\r/g, '') : raw.trim()
+  const showBody = streaming || Boolean(bodyText)
   const showClose = Boolean(onClose) && !loading
 
   return (
@@ -189,16 +104,16 @@ function PetBubble({
               </span>
             </div>
           ) : null}
-          {lines.map((line, i) => (
-            <div key={i} className="pet-chat-bubble-line">
-              {line || ' '}
-              {streaming && i === lines.length - 1 ? (
+          {showBody ? (
+            <div className="pet-chat-bubble-line">
+              {bodyText || ' '}
+              {streaming ? (
                 <span className="pet-chat-stream-cursor" aria-hidden>
                   ▍
                 </span>
               ) : null}
             </div>
-          ))}
+          ) : null}
         </div>
       </div>
       <div className="pet-chat-bubble-tail" aria-hidden />
@@ -436,11 +351,6 @@ export function PetView(): React.ReactElement {
               <PetBubble
                 loading={Boolean(chatLoading)}
                 text={chatBubble}
-                maxLines={
-                  chatBubble === HELP_BUBBLE_TEXT
-                    ? HELP_BUBBLE_MAX_LINES
-                    : undefined
-                }
                 onClose={dismissChatBubble}
               />
             ) : null}
