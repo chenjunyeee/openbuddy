@@ -853,6 +853,8 @@ function Shell(): React.ReactElement {
   const chatLoadingForFit = useAppState(s => s.chatLoading)
   const shellRef = useRef<HTMLDivElement>(null)
   const resizeRaf = useRef(0)
+  /** 与流式 `chatBubble` 同帧多次更新合并为一次测量，减少 buddy-resize IPC */
+  const fitFromStateRaf = useRef(0)
   const lastFitRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
   const applyFitRef = useRef<() => void>(() => {})
 
@@ -885,13 +887,18 @@ function Shell(): React.ReactElement {
     }
   }, [])
 
-  /** 气泡绝对定位不参与 shell 的 layout 宽高：与状态切换同帧先测一遍，再 rAF 收紧一轮，减少「内容已变窗未跟」 */
+  /** 气泡绝对定位不参与 shell 的 layout 宽高：同帧合并多次状态更新后再测，并 rAF 收紧一轮 */
   useLayoutEffect(() => {
-    applyFitRef.current()
-    const id = window.requestAnimationFrame(() => {
+    window.cancelAnimationFrame(fitFromStateRaf.current)
+    fitFromStateRaf.current = window.requestAnimationFrame(() => {
+      fitFromStateRaf.current = 0
       applyFitRef.current()
+      window.requestAnimationFrame(() => applyFitRef.current())
     })
-    return () => window.cancelAnimationFrame(id)
+    return () => {
+      window.cancelAnimationFrame(fitFromStateRaf.current)
+      fitFromStateRaf.current = 0
+    }
   }, [
     petSideSlotVisible,
     chatBubbleForFit,
