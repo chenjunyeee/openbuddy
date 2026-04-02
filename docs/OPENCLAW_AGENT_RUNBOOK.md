@@ -1,231 +1,140 @@
-# OpenClaw 执行手册：从零跑通 openbuddy 桌宠 + 本机 OpenClaw 对话
+# OpenClaw 执行手册（精简版）：跑通 openbuddy 桌宠 + 本机对话
 
 > **读者**：本机 OpenClaw / 可跑 shell 的代理。  
-> **目标**：在**独立 Agent + 独立工作区**内，先与用户对齐桌宠需求，再克隆 [openbuddy](https://github.com/chenjunyeee/openbuddy)、`npm ci` + `build`、**无 UI** 写入 pending，启动后与**已运行的本机网关**聊天。  
-> **字段说明**：`buddy-bootstrap-pending.json` → [openclaw-bootstrap.md](./openclaw-bootstrap.md)。
+> **目标**：独立 Agent + 固定工作区 → 与用户对齐**显示名与性格** → 检出 [openbuddy](https://github.com/chenjunyeee/openbuddy) → 构建 → 写 `buddy-bootstrap-pending.json` → **用 Electron 启动**，与已运行网关聊天。  
+> **pending 字段详解**：[openclaw-bootstrap.md](./openclaw-bootstrap.md)。
 
 ---
 
-## 总流程（编排顺序，须遵守）
+## 一、核心流程（顺序不可颠倒）
 
-下列顺序**不可颠倒**；OpenClaw 指挥自动化时应按此编排，避免未问清需求就拉代码、或路径与 Agent 不一致。
+| 步 | 做什么 |
+|----|--------|
+| 1 | **建独立 Agent**，专用「桌宠 / openbuddy」；Shell / Tools / Soul **同一套 `$REPO_ROOT` 绝对路径**（可设 `OPENBUDDY_REPO_ROOT`）。 |
+| 2 | **划定工作区目录**；下文 **`$REPO_ROOT`** = 检出后含 `package.json`、`electron/`、`src/` 的仓库根。 |
+| 3 | **向用户确认桌宠**：只要 **`hatch.name`**、**`personality`**（见下文约定）。**不要问 userID**：由代理 **现场随机 UUID**（或 `crypto.randomUUID()`），**勿**向用户索要。用户未说清名/性格前 **不 clone、不 npm**。 |
+| 4 | 在工作区根 **`git clone`** openbuddy（空目录可 `git clone … .`）。 |
+| 5 | `npm ci` → `npm run build`（无 lock 用 `npm install`）。 |
+| 6 | **`./node_modules/.bin/electron . --buddy-print-paths`** → 记下 JSON 里的 **`bootstrapPending`**、**`userData`**（见 §3）。 |
+| 7 | 写入 **`buddy-bootstrap-pending.json`**（`version: 1`，网关 + hatch）。 |
+| 8 | **`npm run start:dist`**（开发联调用 `npm run dev`）。首次 ready 会消费 pending、锁定孵化。 |
+| 9 | **验收**（§5）。 |
 
-1. **创建独立 Agent**  
-   在本机 OpenClaw 中为「桌宠 / openbuddy / 本 Runbook」单独建一个 Agent（与日常通用助手隔离），后续 shell、Tools、Soul 均指向该 Agent。
+**`/update`**：在 **`$REPO_ROOT`** 内 `git pull` → `npm ci` / `npm run build` → 重启 `npm run start:dist`（或等价）；Soul / Agent / Tools 路径与之一致。
 
-2. **划定独立工作区**  
-   为该 Agent 指定**唯一**物理目录作为工作区根（下文 **`$REPO_ROOT`** 即此根：检出后须含 `package.json`、`electron/`、`src/`）。Agent 配置、环境变量（如 `OPENBUDDY_REPO_ROOT`）、Tools 默认 cwd **必须**与此路径一致，**不要**假设任意 cwd 可用。
-
-3. **向用户确认桌宠需求（再拉代码）**  
-   在**尚未** `git clone` / 拉取仓库前，明确询问用户想要什么样的桌宠：显示名 `hatch.name`、性格 `personality`、是否需代选 `userID` 等，遵循下文「Agent 强制约定」。**用户答复明确之前，不执行 §1 及之后技术步骤。**
-
-4. **拉取项目到该 Agent 工作区根**  
-   需求确认后，将 openbuddy **检出到步骤 2 的工作区根**（空目录下 `git clone … .` 使仓库根即工作区根，或团队约定子目录时须在 Soul / Agent / Tools 写清同一 `$REPO_ROOT`）。
-
-5. **配置 → 初始化 → 运行**  
-   按 §2 起：`npm ci`、`npm run build`、解析 `--buddy-print-paths`、写 `buddy-bootstrap-pending.json`（§3–§5）、`npm run start:dist`（§6），验收见 §7。
-
-**`/update`**（§0）仍在已绑定的 **`$REPO_ROOT`** 内拉取最新并重建/重启，与工作区绑定不变。
+**存活巡检**：Agent 还须配置 **每 5 分钟** 的定时检查（见 **§九**）；进程不在则 **提示用户**。
 
 ---
 
-### Agent 强制约定：宠物名称必须来自用户
+## 二、Agent 约定（问用户 vs 自动生成）
 
-- `hatch.name`：须用户指定或确认；可给示例但必须由用户选定，**禁止**默认成 `buddy` / `test` 等仅为跑通。未答复则**先问再写** pending（见下文 §5）。  
-- 用户明确「随便 / 你起一个」→ 可代选，同轮 **回显** 将写入 pending 的最终名字。  
-- `personality`：优先用户原话；无则一句确认短默认，勿擅自写长人设。
-
----
-
-## 0. 前置条件
-
-1. **网关**：可访问的 Base URL（例 `http://127.0.0.1:18789`）+ 匹配 **Token**（勿写入日志/录屏）。  
-2. **环境**：`git`；**Node 20+**、`npm`；可跑 Electron（macOS / Windows / Linux）。  
-3. **权限**：可对 Electron **`userData`** 读写（路径见 §4）。
-
-网关未起则先按 OpenClaw 部署启动。
-
-### 独立 Agent 与 `/update`（OpenClaw 侧配置提示）
-
-编排顺序见上文「总流程」：**先**建独立 Agent、**再**绑定独立工作区、**问清桌宠**后**再**克隆；本节约定的是该 Agent **绑定好之后**的路径与更新行为。为避免长期停留在旧代码与旧步骤，**建议在 Soul、Agent 与 Tools 三处一并纳入同一套「更新」约定**（不要只写在其中一层）：
-
-- **服务目录**：该独立 Agent **必须稳定知晓** **openbuddy 在该工作区内的检出根目录**（与下文 **`$REPO_ROOT`** 为同一物理路径）。请在 **Soul、Agent 配置与 Tools** 中 **写清同一个绝对路径**（例如环境变量 `OPENBUDDY_REPO_ROOT` / 系统提示里的固定说明 / Tool 默认参数），**不要**默认「在任何 cwd 下都能跑」；执行 `git pull`、写 pending、`npm run`、`electron .`、`--buddy-print-paths`、重启进程等步骤时，均应以该目录为基准。
-- **触发**：收到 **`/update`**（或团队内与之一致的固定指令）即视为要求升级到仓库最新。
-- **行为**：在上述 **服务目录** 内执行 **拉取最新代码**（如 `git pull` 或等价流程），再 **重新安装/构建并重新运行**（如 `npm ci`、`npm run build`，并重启 `npm run start:dist` 或由你们托管的进程），使自动化与桌宠二进制与当前 Runbook、当前主分支一致。
-
-具体命令与安全策略（分支、是否强制、是否仅 fast-forward）由部署方在 OpenClaw 里实现；本段约定：**服务目录对 Agent 显式可读**，且 **Soul / Agent / Tools 与 `/update` 对齐**，避免 Soul 有路径说明而 Tools 仍用错 cwd、或更新与写 pending 不在同一检出根上。
+- **`hatch.name`**：须用户指定或确认；禁止仅为跑通默认 `buddy` / `test`。未答 → **先问再写** pending。用户说「随便」→ 可代选，**回显**最终名。  
+- **`personality`**：优先用户原话；无则一句短确认，勿自写长篇人设。  
+- **`hatch.userID`**：**不向用户提问**。代理生成 **UUID**（例：`550e8400-e29b-41d4-a716-446655440000`）；同一字符串在本版本 buddy 算法下外形固定。**勿在日志/录屏里泄露 Token**；`userID` 可记在代理侧便于排障。
 
 ---
 
-## 0.1 空白系统（镜像 / 加速，按需）
+## 三、前置与路径（避坑）
 
-进入 §2 前：`node -v`（≥20）、`npm -v`。
+- **网关**：Base URL + Token；勿写入日志/录屏。  
+- **环境**：`git`；**Node 20+**、`npm`。  
+- **userData 目录名** = `package.json` 的 **`"name"`**（当前 **`buddy-desktop`**，≠ 文件夹名 `openbuddy`）。
 
-**Node**：<https://nodejs.org/> 或 [nvm](https://github.com/nvm-sh/nvm) `nvm install 20 && nvm use 20` / [fnm](https://github.com/Schniz/fnm) `fnm install 20 && fnm use 20`。
+**禁止**：用 **`node electron/main.cjs`** 启动主进程 → `app` API 不可用，会报 `getPath` 等错。**必须**：`npm run start:dist`、`npm run dev`、`npx electron .`、或 **`./node_modules/.bin/electron .`**。
 
-**npm 慢**：全局 `npm config set registry https://registry.npmmirror.com`，或仅当次 `npm ci --registry=https://registry.npmmirror.com`（二选一即可）。
-
-查/还原：`npm config get registry`；官方：`npm config set registry https://registry.npmjs.org`。
-
-**Electron 二进制慢**（同一会话 export 后再装依赖）：
-
-```bash
-export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
-npm ci
-```
-
-（环境若认小写 `electron_mirror` 以你方为准；常见 postinstall 认 `ELECTRON_MIRROR`。）
-
-**Git 慢**：
-
-```bash
-git clone https://github.com/chenjunyeee/openbuddy.git
-git clone https://ghproxy.net/https://github.com/chenjunyeee/openbuddy.git
-```
-
-镜像可用性变化，失败则换官方 / 代理 / zip / SSH。
-
-**Agent 自检**：Node/npm OK；`npm ci` 失败已试 registry / `ELECTRON_MIRROR`；**独立 Agent + 工作区已绑定**；**桌宠需求已与用户确认**（文首约定）；`hatch.name`/性格等已可用于 §3–§5。
-
----
-
-## 1. 克隆
-
-**前置**：已完成「总流程」步骤 1–3（Agent、工作区、用户桌宠需求），在**该 Agent 的工作区根**执行。
-
-示例（工作区空目录即仓库根）：
-
-```bash
-cd "$REPO_ROOT"
-git clone https://github.com/chenjunyeee/openbuddy.git .
-```
-
-若克隆到子目录，则后文所有命令在 **`$REPO_ROOT`** = 含 `package.json` 的仓库根，且须与 Tools/Soul 声明的绝对路径一致。
-
-下文 **`$REPO_ROOT`** = 仓库根（含 `package.json`、`electron/`、`src/`）。
-
----
-
-## 2. 依赖 + 构建
-
-```bash
-cd "$REPO_ROOT"
-npm ci
-npm run build
-```
-
-- 无 `package-lock.json` 时用 `npm install`。  
-- `dist/` 供 **`npm run start:dist`**。  
-- 网络失败 → §0.1；可 `npm cache clean --force` 后重试（会清空 npm 缓存）。
-
-可选：`npm run typecheck`。
-
----
-
-## 3. 变量（写入前定值）
-
-| 变量 | 含义 | 示例 |
-|------|------|------|
-| `OPENCLAW_GATEWAY_URL` | 网关 Base URL | `http://127.0.0.1:18789` |
-| `OPENCLAW_GATEWAY_TOKEN` | 网关 Token | （本机 OpenClaw） |
-| `BUDDY_HATCH_USER_ID` | 永久定外形，建议 UUID | `550e8400-e29b-41d4-a716-446655440000` |
-| `BUDDY_DISPLAY_NAME` | 非空显示名 ≤64，须符合文首命名约定 | `小咪` |
-| `BUDDY_PERSONALITY` | 性格，≤200，优先用户原话 | `话少、偶尔吐槽、乐于助人` |
-
----
-
-## 4. `userData` 与纯 JSON 路径（必做）
-
-配置在 Electron **`userData`**；**目录名 = `package.json` 的 `"name"`** → 当前 **`buddy-desktop`**（≠ 文件夹名 `openbuddy`）。
-
-**解析路径**：须用下列命令，**stdout 仅 JSON**（勿对 `npm run start:print-paths` 整段 stdout `JSON.parse`，含 npm 横幅）。
+**取路径（stdout 须为纯 JSON）**：
 
 ```bash
 cd "$REPO_ROOT"
 ./node_modules/.bin/electron . --buddy-print-paths
 ```
 
-记下：**`bootstrapPending`**（＝要创建的 `buddy-bootstrap-pending.json` 绝对路径）、**`userData`**。代理请保留完整 JSON。
+勿对 **`npm run start:print-paths`** 的整段 stdout 直接 `JSON.parse`（npm 可能夹横幅）；优先直接调 **`electron`**。
+
+**网络慢（按需）**：`npm config set registry https://registry.npmmirror.com`；装依赖前可 `export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"` 等（见旧版细节或 README）。Git 可换镜像 / `ghproxy`。
 
 ---
 
-## 5. 写 `buddy-bootstrap-pending.json`（首次正常启动前）
+## 四、克隆与构建
 
 ```bash
-PENDING="/绝对路径/来自上一步/bootstrapPending/"
+cd "$REPO_ROOT"   # 已为空目录或团队约定根
+git clone https://github.com/chenjunyeee/openbuddy.git .
+npm ci
+npm run build
+```
 
-cat > "$PENDING" <<'JSONEOF'
+克隆到**子目录**时，`$REPO_ROOT` 必须指向含 `package.json` 的那一层，并与 Tools 声明一致。
+
+---
+
+## 五、写 pending 与启动
+
+**变量**：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、**`BUDDY_HATCH_USER_ID`**（代理随机 UUID）、**`BUDDY_DISPLAY_NAME`**、**`BUDDY_PERSONALITY`**（均与用户约定一致）。
+
+```bash
+PENDING="<上一步 JSON 的 bootstrapPending 绝对路径>"
+
+cat > "$PENDING" <<EOF
 {
   "version": 1,
   "openclaw": {
-    "url": "OPENCLAW_GATEWAY_URL_HERE",
-    "token": "OPENCLAW_GATEWAY_TOKEN_HERE"
+    "url": "${OPENCLAW_GATEWAY_URL}",
+    "token": "${OPENCLAW_GATEWAY_TOKEN}"
   },
   "hatch": {
-    "userID": "BUDDY_HATCH_USER_ID_HERE",
-    "name": "BUDDY_DISPLAY_NAME_HERE",
-    "personality": "BUDDY_PERSONALITY_HERE"
+    "userID": "${BUDDY_HATCH_USER_ID}",
+    "name": "${BUDDY_DISPLAY_NAME}",
+    "personality": "${BUDDY_PERSONALITY}"
   }
 }
-JSONEOF
-```
+EOF
 
-占位符换成 §3 真值；`cat <<EOF`（无引号）可 shell 展开变量。
-
-可选：`python3 -m json.tool "$PENDING" > /dev/null && echo "JSON ok"`。
-
----
-
-## 6. 启动（消费 pending）
-
-```bash
 cd "$REPO_ROOT"
 npm run start:dist
 ```
 
-**ready 时**：消费 **`buddy-bootstrap-pending.json`** → 写 **`buddy-openclaw.json`**、**`buddy-profile.json`**（`hatchLocked: true`）→ 删 pending → 写 **`buddy-bootstrap-applied.json`**。配置留在 `userData`。
+可选：`python3 -m json.tool "$PENDING" > /dev/null && echo OK`。
 
-**联调**：`npm run dev`（需已 `build` 或 dev 能拉到资源）；pending 同样在 Electron ready 消费。
-
----
-
-## 7. 验收
-
-- **文件**（均在 `userData`）：`buddy-openclaw.json` 有 `url`、`token`；`buddy-profile.json` 存在且 `hatchLocked === true`，`companion.name`＝用户认可名，`personality` / `userID` 符合；**无** `buddy-bootstrap-pending.json`；有 `buddy-bootstrap-applied.json`。  
-- **应用**：外形与固定 `userID` 一致；普通文本发送能经网关收到回复。  
-- 不设 pending 时应用会走 **`/openclaw`**；本 Runbook 目标是一次 pending 跳过手动。
+**消费结果**：生成 **`buddy-openclaw.json`**、**`buddy-profile.json`**（`hatchLocked: true`），删除 pending，写 **`buddy-bootstrap-applied.json`**。
 
 ---
 
-## 8. 常见问题
+## 六、验收
 
-- **8.1 无路径 JSON**：在 `$REPO_ROOT` 且已装 electron；用 `./node_modules/.bin/electron . --buddy-print-paths`。  
-- **8.2 pending 未消费**：UTF-8 合法 JSON，`version: 1`，`openclaw.*` 与 `hatch.*` 均非空。若 profile 已 **`hatchLocked: true`**，新 pending 会 **`buddy-bootstrap-skipped-*.json`**；换宠需清 `userData` 相关文件或新用户。  
-- **8.3 能开不能聊**：curl/浏览器测网关；核对 Token；可选 env `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`（见 `electron/main.cjs`）。  
-- **8.4 重装初始化**：关应用 → 删/备份 `userData` 下 `buddy-profile.json`、`buddy-openclaw.json`、`buddy-bootstrap-applied.json`、`*skipped*` → 新 pending → `npm run start:dist`。
-
----
-
-## 9. 与手动配置
-
-无 pending 时可用应用内 **`/openclaw`**。孵化锁定后勿用 pending 改 **`userID`/名/性格**；URL/Token 仍可用 **`/openclaw`** 更新。
+- **userData 内**：有 `buddy-openclaw.json`（url/token）；`buddy-profile.json` 存在且 **`hatchLocked === true`**，`companion.name` 为用户认可名；**无** `buddy-bootstrap-pending.json`；有 `buddy-bootstrap-applied.json`。  
+- **应用**：能发普通文本并经网关回复。  
+- 无 pending 可走应用内 **`/openclaw`**；本手册以一次 pending 免手动为目标。
 
 ---
 
-## 10. 汇总模板（替换变量后执行）
+## 七、常见问题（必要避坑）
 
-**前置**：已创建独立 Agent、已设 **`REPO_ROOT`** 为该 Agent 独立工作区根（并完成克隆，本模板从克隆后开始；若尚未克隆，先执行 §1）。
+| 现象 | 处理 |
+|------|------|
+| **`getPath` / `app` undefined** | 勿 `node` 直跑 `main.cjs`；用 **`npm run start:dist`** 或 **`electron .`**。 |
+| **拿不到纯 JSON** | 用 **`./node_modules/.bin/electron . --buddy-print-paths`**，勿依赖未截断的 `npm run` 输出做 parse。 |
+| **pending 未应用** | JSON UTF-8、`version: 1`、**`openclaw`/`hatch` 字段非空**。若 profile 已 **`hatchLocked: true`**，pending 会变 **`buddy-bootstrap-skipped-*`**；换孵化须清/备份 userData 相关文件（见 openclaw-bootstrap）。 |
+| **能开不能聊** | 测网关连通与 Token；可看 `electron/main.cjs` 中 env 覆盖。 |
+| **重装孵化** | 关应用 → 删/备份 `buddy-profile.json`、`buddy-openclaw.json`、`buddy-bootstrap-applied.json`、skipped → 新 pending → 再 `npm run start:dist`。 |
 
-已导出：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`BUDDY_HATCH_USER_ID`、`BUDDY_DISPLAY_NAME`、`BUDDY_PERSONALITY`（名/性格已按「总流程」与用户确认）。空白机可先 §0.1。
+孵化锁定后 **勿** 再用 pending 改 **userID / 名 / 性格**；网关 URL/Token 仍可用 **`/openclaw`**。
+
+---
+
+## 八、一页脚本模板（按需裁剪）
+
+**前置**：Agent + `$REPO_ROOT`；已向用户确认**名与性格**；已准备网关 URL/Token。
 
 ```bash
-# 须与本 Agent 绑定的独立工作区根（检出后含 package.json）
-export REPO_ROOT="/path/to/your-agent-workspace"
-# npm config set registry https://registry.npmmirror.com
-# export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-# 若 §1 未单独执行：空目录下克隆到工作区根
-git clone https://github.com/chenjunyeee/openbuddy.git "$REPO_ROOT"
+export REPO_ROOT="/path/to/agent-workspace"
+export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
+export OPENCLAW_GATEWAY_TOKEN="…"
+export BUDDY_DISPLAY_NAME="…"      # 用户确认
+export BUDDY_PERSONALITY="…"      # 用户确认
+export BUDDY_HATCH_USER_ID="$(node -e "console.log(require('crypto').randomUUID())")"
+
+# git clone …
 cd "$REPO_ROOT"
 npm ci
 npm run build
@@ -251,8 +160,55 @@ EOF
 npm run start:dist
 ```
 
-`PATHS_JSON` 解析失败则手动跑 `./node_modules/.bin/electron . --buddy-print-paths`，`JSON.parse` 取 `bootstrapPending`。
+`PATHS_JSON` 解析失败时：手动执行 print-paths，肉眼复制 `bootstrapPending`，或对 **仅含 JSON 的那一行** 再 `JSON.parse`。
 
 ---
 
-**版本**：与 [openbuddy](https://github.com/chenjunyeee/openbuddy) `docs/` 同步；与代码冲突以 `electron/main.cjs` 为准。
+## 九、桌宠存活巡检（Agent 必配：5 分钟）
+
+桌宠是独立 Electron 进程，崩溃或被关掉后网关仍在，用户可能误以为「还能聊」。**本 Agent** 须在 OpenClaw / 主机上配置 **固定间隔 5 分钟（300 秒）** 的重复任务，只做两件事：**判断是否存活** → **不存活则明确提示用户**。
+
+### 9.1 怎么判「存活」
+
+- **推荐**：看是否存在 **与本仓库绑定的 Electron 主进程**——进程参数或工作目录能关联到 **`$REPO_ROOT`**（例如命令行中出现该路径下的 `electron`、`main.cjs` 或 `node_modules/electron` 启动链）。
+- **禁止**：仅匹配 `'electron'` 四字，以免把别的 Electron 应用当成桌宠。
+- **说明**：用户 **主动退出** 桌宠时也会判为「未存活」；提示文案可加一句「若您刚关闭窗口可忽略」，避免误扰（可选）。
+
+### 9.2 检查示例（bash，按需改 `pgrep` / `ps` 适应系统）
+
+```bash
+export REPO_ROOT="/path/to/agent-workspace"  # 与上文一致
+
+if command -v pgrep >/dev/null 2>&1; then
+  # macOS 常见：pgrep -fl；部分 Linux：pgrep -af
+  _pat="$(pgrep -fl electron 2>/dev/null || pgrep -af electron 2>/dev/null || true)"
+else
+  _pat="$(ps aux 2>/dev/null || true)"
+fi
+if echo "$_pat" | grep -F "$REPO_ROOT" | grep -qi electron; then
+  exit 0   # 存活
+fi
+# 未存活：由 Agent 走 9.3
+exit 1
+```
+
+Windows 可用 PowerShell 查 `Get-CimInstance Win32_Process`，过滤 **`CommandLine`** 同时含 **`$REPO_ROOT`** 与 **`electron`**（路径分隔符按本机转义）。
+
+### 9.3 未存活时如何「提示用户」
+
+至少满足其一（按你方 OpenClaw 能力选）：
+
+- **对话内主动提醒**：例如向用户可见会话发一条短消息：**桌宠进程当前未在运行**，并给出 **`cd "$REPO_ROOT" && npm run start:dist`**（或与用户约定的一键启动方式）；**勿** 仅写代理私有日志而不让用户看见。
+- **系统通知** / 团队告警渠道：若 Agent 支持，可叠加。
+
+### 9.4 定时从哪来
+
+任选其一并写进 Soul / Agent 运维说明，与 **`$REPO_ROOT`** 同级固定：
+
+- **cron**：每 5 分钟执行一次，例如 `*/5 * * * *` 调用检查脚本；  
+- **systemd timer** / **launchd** / **Windows 任务计划程序**：间隔 5 分钟；  
+- 或 OpenClaw 内置「周期任务 / workflow」——**周期必须为 5 分钟**（除非团队统一改成更长，本手册默认 **300s**）。
+
+---
+
+**版本**：与仓库 `docs/`、`electron/main.cjs` 一致；细节冲突以代码为准。

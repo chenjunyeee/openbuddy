@@ -9,7 +9,21 @@ const {
   sendOpenClawChatCompletion,
   normalizeOpenClawGatewayBaseUrl,
 } = require('./openclaw-chat.cjs')
-const { app, BrowserWindow, screen, Menu, ipcMain } = require('electron')
+const electron = require('electron')
+/** 禁止 `node electron/main.cjs`：必须用 Electron 二进制拉起主进程，否则 `app` 等 API 不可用 */
+if (
+  !electron ||
+  typeof electron !== 'object' ||
+  typeof electron.app?.getPath !== 'function'
+) {
+  console.error(
+    '[buddy-desktop] 主进程不能直接用 node 运行；请用 Electron 入口：\n' +
+      '  npm run dev   或   npx electron .   或   npm run start:dist\n' +
+      '（直接 node 时 require("electron") 不会是完整 API，导致 app.getPath 等为 undefined）',
+  )
+  process.exit(1)
+}
+const { app, BrowserWindow, screen, Menu, ipcMain } = electron
 /** 若仍有拖影可试：启动前 export BUDDY_DISABLE_GPU=1（会略损性能） */
 if (process.env.BUDDY_DISABLE_GPU === '1') app.disableHardwareAcceleration()
 const path = require('path')
