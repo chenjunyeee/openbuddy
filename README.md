@@ -4,6 +4,8 @@
 
 接上 **OpenClaw** 网关，它还能和你聊天；不配网关，它照常趴桌卖萌。
 
+快捷接入 **OpenClaw** - 复制 https://github.com/chenjunyeee/openbuddy/blob/main/docs/OPENCLAW_AGENT_RUNBOOK.md 直接发给你的龙虾
+
 ## 一览
 ![正常](https://github.com/user-attachments/assets/2bc8efba-066d-4b8a-ae9e-13e2e0927d53)
 
