@@ -266,6 +266,8 @@ export type BuddyAppState = {
   /** 桌宠旁气泡：Claude 回复或正在请求 */
   chatLoading?: boolean
   chatBubble?: string
+  /** 输入框失焦超过阈值后隐藏气泡（不删 `chatBubble`，聚焦输入可再显示） */
+  chatBubbleIdleHidden?: boolean
   /** OpenClaw 分步引导当前步（undefined 表示未在引导中） */
   openclawGuideStep?: number
   /** 主进程：网关 URL + Token 已就绪 */
@@ -280,4 +282,8 @@ export type BuddyAppState = {
   lastConversationActivityAt?: number
   /** 最近一次拖窗抚摸精灵（`buddy-window-moved`）的时间戳；与对话合并后用于「睡眠」计时 */
   lastPetAttentionAt?: number
+  /** `/stat`：五条属性面板（非聊天气泡；与 Claude Code 桌宠同色语义） */
+  statPanelOpen?: boolean
+  /** 仅桌宠：隐藏输入框与左侧槽（气泡/属性）；右下开关可随时恢复 */
+  petSoloMode?: boolean
 }

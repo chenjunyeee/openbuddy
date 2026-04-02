@@ -285,7 +285,8 @@ function clampToScreen(x, y, w, h) {
 /** 逻辑右下角（屏幕坐标）；连续 buddy-resize 用存值而非每次 getBounds，减轻取整回读导致的水平漂移 */
 let buddyResizeAnchorR = null
 let buddyResizeAnchorB = null
-const BUDDY_RESIZE_ANCHOR_DRIFT = 12
+/** 略放宽：减小程序 resize 与 getBounds 取整差导致的锚点重置 → 减轻精灵「平移闪一下」 */
+const BUDDY_RESIZE_ANCHOR_DRIFT = 22
 
 /**
  * 缩放时固定窗口右下角（与渲染进程测量一致），避免因 clampToScreen 把顶边下移而「整块 UI 被挤到屏幕下方」。
@@ -553,6 +554,17 @@ app.whenReady().then(() => {
     const h = Math.round(Math.min(Math.max(Number(height) || 0, 96), 4096))
     if (Math.abs(b.width - w) <= 1 && Math.abs(b.height - h) <= 1) return
     buddyResizeWithAnchoredBottomRight(win, w, h)
+  })
+
+  ipcMain.on('buddy-solo-pointer', (event, payload) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const p = payload && typeof payload === 'object' ? payload : {}
+    if (!p.solo) {
+      win.setIgnoreMouseEvents(false)
+      return
+    }
+    win.setIgnoreMouseEvents(!p.overPet, { forward: true })
   })
 
   ipcMain.handle('buddy-chat', async (event, payload) => {

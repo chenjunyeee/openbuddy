@@ -1,13 +1,43 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getCompanion } from '@buddy/companion.js'
 import { renderSpriteWithMeta, spriteFrameCount } from '@buddy/sprites.js'
 import {
+  type BuddyAppState,
   BUDDY_HEART_RGB_DARK,
   BUDDY_HEART_RGB_LIGHT,
   BUDDY_RARITY_RGB_DARK,
   BUDDY_RARITY_RGB_LIGHT,
 } from '@buddy/types.js'
+import { CompanionStatsPanel } from './CompanionStatsPanel'
 import { useAppState, useSetAppState } from './BuddyState'
+
+/** 是否仍有「气泡内容」（用于保留锚点占位，失焦隐藏时不卸载以免窗口伸缩导致精灵位移） */
+export function hasPetBubbleContent(s: BuddyAppState): boolean {
+  if (typeof s.openclawGuideStep === 'number') return true
+  if (s.chatLoading) return true
+  return Boolean((s.chatBubble ?? '').trim())
+}
+
+/** 左侧锚点是否应有内容（聊天气泡 ± /stat 属性块，同一位置）。仅桌宠也保留 DOM，与对话框同属占位隐藏，避免缩窗导致精灵位移。 */
+export function hasPetSideSlotContent(s: BuddyAppState): boolean {
+  return hasPetBubbleContent(s) || s.statPanelOpen === true
+}
+
+/** 与 Shell `resizeToFit`、PetView 同步：是否「画出」聊天气泡（失焦 idle 时仍可保留 DOM，仅视觉隐藏） */
+export function shouldShowPetChatBubble(s: BuddyAppState): boolean {
+  if (!hasPetBubbleContent(s)) return false
+  if (s.chatLoading) return true
+  if (typeof s.openclawGuideStep === 'number') return true
+  return !s.chatBubbleIdleHidden
+}
+
+/** 左侧锚点是否可见：对话气泡或 /stat 属性（共用位，同一套失焦隐藏规则） */
+export function shouldShowPetSideSlot(s: BuddyAppState): boolean {
+  if (s.petSoloMode === true) return false
+  if (shouldShowPetChatBubble(s)) return true
+  if (s.statPanelOpen === true && !s.chatBubbleIdleHidden) return true
+  return false
+}
 
 const TICK_MS = 500
 const PET_BURST_MS = 2500
@@ -74,9 +104,11 @@ function wrapBubbleStreaming(text: string): string[] {
 function PetBubble({
   loading,
   text,
+  onClose,
 }: {
   loading: boolean
   text: string | undefined
+  onClose?: () => void
 }): React.ReactElement {
   const raw = text ?? ''
   const streaming = loading && raw.length > 0
@@ -86,30 +118,43 @@ function PetBubble({
     : !loading && raw.trim()
       ? wrapBubbleText(raw)
       : []
+  const showClose = Boolean(onClose) && !loading
 
   return (
-    <div className="pet-chat-bubble surface-card" aria-live="polite">
-      <div className="pet-chat-bubble-body">
-        {linesLoadingOnly ? (
-          <div className="pet-chat-bubble-loading">
-            <span className="pet-chat-bubble-loading-label">在想中</span>
-            <span className="pet-chat-bubble-dots" aria-hidden>
-              <span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          </div>
-        ) : null}
-        {lines.map((line, i) => (
-          <div key={i} className="pet-chat-bubble-line">
-            {line || ' '}
-            {streaming && i === lines.length - 1 ? (
-              <span className="pet-chat-stream-cursor" aria-hidden>
-                ▍
+    <div className="pet-chat-bubble-outer" aria-live="polite">
+      {showClose ? (
+        <button
+          type="button"
+          className="pet-chat-bubble__close"
+          onClick={onClose}
+          aria-label="关闭聊天气泡"
+        >
+          ×
+        </button>
+      ) : null}
+      <div className="pet-chat-bubble surface-card">
+        <div className="pet-chat-bubble-body">
+          {linesLoadingOnly ? (
+            <div className="pet-chat-bubble-loading">
+              <span className="pet-chat-bubble-loading-label">在想中</span>
+              <span className="pet-chat-bubble-dots" aria-hidden>
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
               </span>
-            ) : null}
-          </div>
-        ))}
+            </div>
+          ) : null}
+          {lines.map((line, i) => (
+            <div key={i} className="pet-chat-bubble-line">
+              {line || ' '}
+              {streaming && i === lines.length - 1 ? (
+                <span className="pet-chat-stream-cursor" aria-hidden>
+                  ▍
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="pet-chat-bubble-tail" aria-hidden />
     </div>
@@ -160,6 +205,26 @@ export function PetView(): React.ReactElement {
   const petAt = useAppState(s => s.companionPetAt)
   const chatLoading = useAppState(s => s.chatLoading)
   const chatBubble = useAppState(s => s.chatBubble)
+  const petSoloMode = useAppState(s => s.petSoloMode === true)
+  const bubbleSlotActive = useAppState(hasPetSideSlotContent)
+  const bubbleHasChat = useAppState(hasPetBubbleContent)
+  const showBubblePaint = useAppState(shouldShowPetSideSlot)
+  const statPanelOpen = useAppState(s => s.statPanelOpen === true)
+  const shellAppearance = useAppState(s => s.shellAppearance)
+  const dismissChatBubble = useCallback((): void => {
+    setAppState(s => ({
+      ...s,
+      chatBubble: undefined,
+      chatBubbleIdleHidden: false,
+      openclawGuideStep: undefined,
+    }))
+  }, [setAppState])
+  const closeStatPanel = useCallback((): void => {
+    setAppState(s => ({ ...s, statPanelOpen: false }))
+  }, [setAppState])
+  const togglePetSoloMode = useCallback((): void => {
+    setAppState(s => ({ ...s, petSoloMode: !s.petSoloMode }))
+  }, [setAppState])
   const prevChatLoading = useRef(false)
   const replyBurstUntil = useRef(0)
   const appearancePrev = useRef<string | null>(null)
@@ -297,14 +362,31 @@ export function PetView(): React.ReactElement {
       ? bodyStartIdx + hatLineIndex
       : null
 
-  const showBubble =
-    Boolean(chatLoading) || Boolean(chatBubble != null && chatBubble.trim())
-
   return (
     <div className="pet-view">
       <div className="pet-row">
-        {showBubble ? (
-          <PetBubble loading={Boolean(chatLoading)} text={chatBubble} />
+        {bubbleSlotActive ? (
+          <div
+            className={
+              showBubblePaint
+                ? 'pet-bubble-anchor'
+                : 'pet-bubble-anchor pet-bubble-anchor--concealed'
+            }
+            aria-hidden={!showBubblePaint}
+          >
+            {statPanelOpen ? (
+              <CompanionStatsPanel
+                shellAppearance={shellAppearance}
+                onClose={closeStatPanel}
+              />
+            ) : bubbleHasChat ? (
+              <PetBubble
+                loading={Boolean(chatLoading)}
+                text={chatBubble}
+                onClose={dismissChatBubble}
+              />
+            ) : null}
+          </div>
         ) : null}
         <div className="pet-sprite-stage">
           <PetSpriteClouds />
@@ -359,6 +441,26 @@ export function PetView(): React.ReactElement {
                 {companion.name}
               </span>
             </pre>
+            <button
+              type="button"
+              className={
+                petSoloMode ? 'pet-solo-pip pet-solo-pip--on' : 'pet-solo-pip'
+              }
+              style={{
+                borderColor: rarityInk,
+                background: petSoloMode ? rarityInk : 'transparent',
+              }}
+              onClick={togglePetSoloMode}
+              title={
+                petSoloMode
+                  ? '恢复对话与气泡（/solo off）'
+                  : '仅桌宠：隐藏输入与气泡（/solo）'
+              }
+              aria-label={
+                petSoloMode ? '关闭仅桌宠模式' : '开启仅桌宠模式'
+              }
+              aria-pressed={petSoloMode}
+            />
           </div>
         </div>
       </div>

@@ -25,7 +25,7 @@ import {
   useAppState,
   useSetAppState,
 } from './BuddyState'
-import { PetView } from './PetView'
+import { PetView, shouldShowPetSideSlot } from './PetView'
 import {
   getOpenclawHelpSteps,
   OPENCLAW_LOCAL_DEFAULT_URL,
@@ -80,6 +80,9 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
   if (v === '/') return true
   if (/^\/c(\s.*)?$/i.test(v)) return true
+  if (/^\/stat(\s.*)?$/i.test(v)) return true
+  if (/^\/solo(\s.*)?$/i.test(v)) return true
+  if (/^\/bubble(\s.*)?$/i.test(v)) return true
   if (/^\/openclaw(\s.*)?$/i.test(v)) return true
   if (!testMode) return false
   const slashed = [
@@ -153,6 +156,8 @@ const OPENCLAW_GUIDE_STEPS = getOpenclawHelpSteps()
 
 const SLEEP_AFTER_MS = 15_000
 const MOOD_TICK_MS = 1000
+/** 输入框失焦后多久隐藏桌旁聊天气泡（光标不在输入框内） */
+const BUBBLE_HIDE_AFTER_INPUT_BLUR_MS = 5000
 
 /** 刷新「未休眠」计时；若在睡觉则弄醒。用于发收消息与输入框键入。 */
 function bumpDialogueActivity(s: BuddyAppState): Partial<BuddyAppState> {
@@ -192,6 +197,7 @@ function ChatDialogPanel(): React.ReactElement {
   const setAppState = useSetAppState()
   const chatLoading = useAppState(s => s.chatLoading)
   const petMood = useAppState(s => s.petMood)
+  const petSoloMode = useAppState(s => s.petSoloMode === true)
   const testMode = useAppState(s => Boolean(s.testMode))
   const openclawGuideStep = useAppState(s => s.openclawGuideStep)
   const openclawConfigured = useAppState(s => s.openclawConfigured)
@@ -199,11 +205,13 @@ function ChatDialogPanel(): React.ReactElement {
   const streamIdRef = useRef(0)
   const activeStreamSessionRef = useRef(-1)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  /** 睡眠时收起输入；引导 / 在想中始终保留以便 /c 等 */
+  const bubbleHideAfterBlurRef = useRef(0)
+  /** 睡眠 / 仅桌宠：输入区交互关闭，但面板仍占位（visibility:hidden），与睡眠一致、不缩窗 */
   const chatPanelVisible =
-    petMood !== 'sleep' ||
-    typeof openclawGuideStep === 'number' ||
-    Boolean(chatLoading)
+    !petSoloMode &&
+    (petMood !== 'sleep' ||
+      typeof openclawGuideStep === 'number' ||
+      Boolean(chatLoading))
 
   useEffect(() => {
     const sub = window.buddyDesktop?.subscribeChatStream
@@ -229,6 +237,43 @@ function ChatDialogPanel(): React.ReactElement {
       }))
     })
   }, [setAppState])
+
+  const clearBubbleHideTimer = useCallback((): void => {
+    if (bubbleHideAfterBlurRef.current) {
+      window.clearTimeout(bubbleHideAfterBlurRef.current)
+      bubbleHideAfterBlurRef.current = 0
+    }
+  }, [])
+
+  useEffect(() => () => clearBubbleHideTimer(), [clearBubbleHideTimer])
+
+  /** OpenClaw 引导进行中：不决断「失焦隐藏」，并清除待触发定时器 */
+  useEffect(() => {
+    if (typeof openclawGuideStep !== 'number') return
+    clearBubbleHideTimer()
+    setAppState(s =>
+      s.chatBubbleIdleHidden ? { ...s, chatBubbleIdleHidden: false } : s,
+    )
+  }, [openclawGuideStep, clearBubbleHideTimer, setAppState])
+
+  const onChatInputFocus = useCallback((): void => {
+    clearBubbleHideTimer()
+    setAppState(s =>
+      s.chatBubbleIdleHidden ? { ...s, chatBubbleIdleHidden: false } : s,
+    )
+  }, [clearBubbleHideTimer, setAppState])
+
+  const onChatInputBlur = useCallback((): void => {
+    clearBubbleHideTimer()
+    bubbleHideAfterBlurRef.current = window.setTimeout(() => {
+      bubbleHideAfterBlurRef.current = 0
+      setAppState(s => {
+        if (typeof s.openclawGuideStep === 'number') return s
+        if (s.chatLoading) return s
+        return { ...s, chatBubbleIdleHidden: true }
+      })
+    }, BUBBLE_HIDE_AFTER_INPUT_BLUR_MS)
+  }, [clearBubbleHideTimer, setAppState])
 
   const startOpenclawGuide = useCallback(() => {
     setAppState(s => ({
@@ -279,6 +324,61 @@ function ChatDialogPanel(): React.ReactElement {
     }
 
     const low = t.trim().toLowerCase()
+    if (low === '/stat off' || low.startsWith('/stat off ')) {
+      setDraft('')
+      setAppState(s => ({ ...s, statPanelOpen: false }))
+      return
+    }
+    if (low === '/stat' || low.startsWith('/stat ')) {
+      setDraft('')
+      if (low === '/stat' || low === '/stat toggle') {
+        setAppState(s => ({
+          ...s,
+          statPanelOpen: !s.statPanelOpen,
+        }))
+        return
+      }
+      if (low === '/stat on' || low.startsWith('/stat on ')) {
+        setAppState(s => ({ ...s, statPanelOpen: true }))
+        return
+      }
+      setAppState(s => ({
+        ...s,
+        statPanelOpen: !s.statPanelOpen,
+      }))
+      return
+    }
+
+    if (low === '/bubble off' || low.startsWith('/bubble off ')) {
+      setDraft('')
+      setAppState(s => ({
+        ...s,
+        chatBubble: undefined,
+        chatBubbleIdleHidden: false,
+        openclawGuideStep: undefined,
+      }))
+      return
+    }
+    if (low === '/solo off' || low.startsWith('/solo off ')) {
+      setDraft('')
+      setAppState(s => ({ ...s, petSoloMode: false }))
+      return
+    }
+    if (low === '/solo' || low.startsWith('/solo ')) {
+      setDraft('')
+      const rest = low.slice('/solo'.length).trim()
+      if (rest === '' || rest === 'on') {
+        setAppState(s => ({ ...s, petSoloMode: true }))
+        return
+      }
+      if (rest === 'off') {
+        setAppState(s => ({ ...s, petSoloMode: false }))
+        return
+      }
+      setAppState(s => ({ ...s, petSoloMode: !s.petSoloMode }))
+      return
+    }
+
     if (low === '/test off' || low.startsWith('/test off ')) {
       setDraft('')
       clearRollCache()
@@ -308,7 +408,7 @@ function ChatDialogPanel(): React.ReactElement {
         ...s,
         testMode: true,
         chatBubble:
-          '测试模式：发 /roll 随机抽外形（不换存档）。/high 提高稀有、隐藏种、异色概率；/low 降低。/common～/legendary 可固定稀有度再 roll。/test off 退出。',
+          '测试模式：发 /roll 随机抽外形（不换存档）。/high 提高稀有、隐藏种、异色概率；/low 降低。/test off 退出。',
       }))
       return
     }
@@ -331,6 +431,7 @@ function ChatDialogPanel(): React.ReactElement {
       const { bones } = roll(companionUserId())
       setAppState(s => ({
         ...s,
+        statPanelOpen: true,
         chatBubble: formatTestRollBubble(bones),
       }))
       return
@@ -388,6 +489,7 @@ function ChatDialogPanel(): React.ReactElement {
       })
       setAppState(s => ({
         ...s,
+        statPanelOpen: true,
         chatBubble: `已按 ${raritySlash}（${RARITY_ZH[raritySlash]}）随机外形；仍可发 /roll 继续抽。`,
       }))
       return
@@ -453,6 +555,7 @@ function ChatDialogPanel(): React.ReactElement {
       chatLoading: true,
       chatBubble: undefined,
       openclawGuideStep: undefined,
+      chatBubbleIdleHidden: false,
     }))
 
     const soul = getGlobalConfig().companion
@@ -501,8 +604,8 @@ function ChatDialogPanel(): React.ReactElement {
   }, [chatPanelVisible])
 
   const inputPlaceholder = useMemo((): string => {
-    const tail = ' · /c（夜/浅色框/深色框）'
-    if (chatLoading) return '在想中：仅可 /c'
+    const tail = ' · /c · /solo /stat /bubble off'
+    if (chatLoading) return '在想中：仅可 /c、/solo…'
     if (testMode) return `测试：/roll · /high /low · /test off${tail}`
     if (openclawConfigured) return `Enter 发送${tail}`
     if (typeof openclawGuideStep === 'number')
@@ -557,17 +660,25 @@ function ChatDialogPanel(): React.ReactElement {
         disabled={!chatPanelVisible}
         tabIndex={chatPanelVisible ? 0 : -1}
         onChange={onDraftChange}
+        onFocus={onChatInputFocus}
+        onBlur={onChatInputBlur}
         onKeyDown={onKeyDown}
       />
   </div>
   )
 }
 
-/** 气泡增高时窗口向上扩展；预留少量高度缓冲，避免边缘抖动（主进程已锚定右下角） */
-const BUBBLE_STACK_RESERVE_PX = 72
+/** 气泡增高时窗口向上扩展；预留竖直缓冲 */
+const BUBBLE_STACK_RESERVE_PX = 88
 const RESIZE_MARGIN = 8
+/** 取整后仍易少 1px；主进程也会 ±1 忽略，渲染端略放大更稳 */
+const FIT_EXTRA_SLACK_PX = 2
+/** CSS：tail `right:-5` + 5px 三角；引擎常对 0×0 边框三角返回空 rect，必须几何补足 */
+const BUBBLE_TAIL_EXTEND_RIGHT_PX = 8
 
-const RESIZE_FIT_EPSILON_PX = 3
+/** 参与 union：锚点、精灵舞台（含云朵等 absolute）、尾巴节点（能测到则并入） */
+const SHELL_FIT_UNION_SELECTOR =
+  '.pet-bubble-anchor, .pet-sprite-stage, .pet-chat-bubble-tail'
 
 function shellClassName(appearance: ShellAppearance | undefined): string {
   const a = appearance ?? 'transparent'
@@ -578,11 +689,98 @@ function shellClassName(appearance: ShellAppearance | undefined): string {
   return 'shell shell--solid shell--solid-night shell--palette-night'
 }
 
+function measureShellFitPx(el: HTMLElement): { w: number; h: number } {
+  const r = el.getBoundingClientRect()
+  let left = r.left
+  let right = r.right
+  let top = r.top
+  let bottom = r.bottom
+  const merge = (b: DOMRect): void => {
+    left = Math.min(left, b.left)
+    right = Math.max(right, b.right)
+    top = Math.min(top, b.top)
+    bottom = Math.max(bottom, b.bottom)
+  }
+  for (const node of el.querySelectorAll(SHELL_FIT_UNION_SELECTOR)) {
+    merge(node.getBoundingClientRect())
+  }
+  for (const outer of el.querySelectorAll('.pet-chat-bubble-outer')) {
+    if (!(outer instanceof HTMLElement)) continue
+    if (!outer.querySelector('.pet-chat-bubble-tail')) continue
+    const o = outer.getBoundingClientRect()
+    right = Math.max(right, o.right + BUBBLE_TAIL_EXTEND_RIGHT_PX)
+  }
+  const w =
+    Math.ceil(right - left + RESIZE_MARGIN * 2) + FIT_EXTRA_SLACK_PX
+  const h =
+    Math.ceil(
+      bottom - top + BUBBLE_STACK_RESERVE_PX + RESIZE_MARGIN * 2,
+    ) + FIT_EXTRA_SLACK_PX
+  return { w, h }
+}
+
+/**
+ * 仅桌宠：主进程对窗口 setIgnoreMouseEvents，透明区点到后面应用/桌面；
+ * 移入 .pet-sprite-stage 时恢复接收（forward 以便跟踪指针）。
+ */
+function PetSoloPointerBridge(): null {
+  const petSoloMode = useAppState(s => s.petSoloMode === true)
+
+  useEffect(() => {
+    const send = window.buddyDesktop?.sendSoloPointerState
+    if (!send) return
+
+    if (!petSoloMode) {
+      send({ solo: false, overPet: false })
+      return
+    }
+
+    let raf = 0
+    let lastOver: boolean | null = null
+
+    const flush = (clientX: number, clientY: number): void => {
+      const el = document.elementFromPoint(clientX, clientY)
+      const overPet = Boolean(el?.closest?.('.pet-sprite-stage'))
+      if (lastOver === overPet) return
+      lastOver = overPet
+      send({ solo: true, overPet })
+    }
+
+    const onPointer = (e: PointerEvent): void => {
+      if (raf) return
+      raf = window.requestAnimationFrame(() => {
+        raf = 0
+        flush(e.clientX, e.clientY)
+      })
+    }
+
+    send({ solo: true, overPet: false })
+
+    window.addEventListener('pointermove', onPointer, { capture: true })
+    window.addEventListener('pointerdown', onPointer, { capture: true })
+
+    return () => {
+      window.removeEventListener('pointermove', onPointer, { capture: true })
+      window.removeEventListener('pointerdown', onPointer, { capture: true })
+      if (raf) window.cancelAnimationFrame(raf)
+      send({ solo: false, overPet: false })
+    }
+  }, [petSoloMode])
+
+  return null
+}
+
 function Shell(): React.ReactElement {
   const shellAppearance = useAppState(s => s.shellAppearance)
+  const statPanelOpen = useAppState(s => s.statPanelOpen === true)
+  const petSoloMode = useAppState(s => s.petSoloMode === true)
+  const petSideSlotVisible = useAppState(shouldShowPetSideSlot)
+  const chatBubbleForFit = useAppState(s => s.chatBubble)
+  const chatLoadingForFit = useAppState(s => s.chatLoading)
   const shellRef = useRef<HTMLDivElement>(null)
   const resizeRaf = useRef(0)
   const lastFitRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
+  const applyFitRef = useRef<() => void>(() => {})
 
   useLayoutEffect(() => {
     const el = shellRef.current
@@ -591,22 +789,15 @@ function Shell(): React.ReactElement {
     const apply = (): void => {
       const api = window.buddyDesktop?.resizeToFit
       if (!api) return
-      const r = el.getBoundingClientRect()
-      // 用 round 减少与主进程 getBounds 取整方向不一致导致的宽度来回修正（表现为向右挤）
-      const w = Math.round(r.width + RESIZE_MARGIN * 2)
-      const h = Math.round(
-        r.height + BUBBLE_STACK_RESERVE_PX + RESIZE_MARGIN * 2,
-      )
+      const { w, h } = measureShellFitPx(el)
       const { w: lw, h: lh } = lastFitRef.current
-      if (
-        Math.abs(w - lw) <= RESIZE_FIT_EPSILON_PX &&
-        Math.abs(h - lh) <= RESIZE_FIT_EPSILON_PX
-      ) {
-        return
-      }
+      /** 禁用「±3px 跳过」：少涨 1～2px 时以前会一直不调 resize，气泡/尾巴必然裁切 */
+      if (w === lw && h === lh) return
       lastFitRef.current = { w, h }
       void api(w, h)
     }
+
+    applyFitRef.current = apply
 
     const ro = new ResizeObserver(() => {
       window.cancelAnimationFrame(resizeRaf.current)
@@ -620,8 +811,29 @@ function Shell(): React.ReactElement {
     }
   }, [])
 
+  /** 气泡绝对定位不参与 shell 的 layout 宽高：与状态切换同帧先测一遍，再 rAF 收紧一轮，减少「内容已变窗未跟」 */
+  useLayoutEffect(() => {
+    applyFitRef.current()
+    const id = window.requestAnimationFrame(() => {
+      applyFitRef.current()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [
+    petSideSlotVisible,
+    chatBubbleForFit,
+    chatLoadingForFit,
+    statPanelOpen,
+    petSoloMode,
+    shellAppearance,
+  ])
+
+  const shellClass =
+    shellClassName(shellAppearance) +
+    (petSoloMode ? ' shell--pet-solo-passthrough' : '')
+
   return (
-    <div className={shellClassName(shellAppearance)} ref={shellRef}>
+    <div className={shellClass} ref={shellRef}>
+      <PetSoloPointerBridge />
       <AutoPetMood />
       <div className="pet-column">
         <div className="pet-row-outer">

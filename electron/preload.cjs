@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('buddyDesktop', {
   resizeToFit(width, height) {
     return ipcRenderer.invoke('buddy-resize', width, height)
   },
+  /** 仅桌宠：透明区穿透到桌面；overPet 时在精灵舞台内恢复接收 */
+  sendSoloPointerState(payload) {
+    ipcRenderer.send('buddy-solo-pointer', payload)
+  },
   sendChat(payload) {
     return ipcRenderer.invoke('buddy-chat', payload)
   },
