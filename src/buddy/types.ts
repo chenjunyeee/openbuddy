@@ -180,12 +180,14 @@ export const STAT_NAMES = [
 ] as const
 export type StatName = (typeof STAT_NAMES)[number]
 
-/** `/c` 循环：透明浅色 → 透明夜间 → 浅色带框 → 深色带框 */
+/**
+ * `/c` 循环：透明正常 → 透明夜间 → 精灵柔和白底 → 精灵柔和黑底（仅精灵区光晕，非整窗带框）
+ */
 export const SHELL_APPEARANCES = [
   'transparent',
   'transparent-dark',
-  'solid-day',
-  'solid-night',
+  'sprite-backdrop-light',
+  'sprite-backdrop-dark',
 ] as const
 export type ShellAppearance = (typeof SHELL_APPEARANCES)[number]
 
@@ -274,7 +276,7 @@ export type BuddyAppState = {
   openclawConfigured?: boolean
   /** 主进程：buddy-bootstrap-pending 已应用后锁定，不可再孵化 */
   hatchLocked?: boolean
-  /** /c：在 `SHELL_APPEARANCES` 间循环 */
+  /** /c：在 `SHELL_APPEARANCES`（透明昼夜 + 精灵软白/软黑底）间循环 */
   shellAppearance?: ShellAppearance
   /** 自动：`sleep`＝≥15s 无对话且无抚摸。✦ 星星仅在与气泡「在想中」同步的加载阶段显示（见 PetView）。 */
   petMood?: 'sleep'
@@ -286,4 +288,6 @@ export type BuddyAppState = {
   statPanelOpen?: boolean
   /** 仅桌宠：隐藏输入框与左侧槽（气泡/属性）；右下开关可随时恢复 */
   petSoloMode?: boolean
+  /** `/weather`：为 true 时隐藏顶栏云朵（保留顶距，避免 /c 白黑衬底被纵向压扁） */
+  petCloudsHidden?: boolean
 }

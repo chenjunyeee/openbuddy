@@ -1,8 +1,6 @@
 import React from 'react'
 import { getCompanion } from '@buddy/companion.js'
 import {
-  BUDDY_HEART_RGB_DARK,
-  BUDDY_HEART_RGB_LIGHT,
   BUDDY_RARITY_RGB_DARK,
   BUDDY_RARITY_RGB_LIGHT,
   type ShellAppearance,
@@ -11,7 +9,7 @@ import {
 
 function shellIsNight(appearance: ShellAppearance | undefined): boolean {
   const a = appearance ?? 'transparent'
-  return a === 'transparent-dark' || a === 'solid-night'
+  return a === 'transparent-dark' || a === 'sprite-backdrop-dark'
 }
 
 /**
@@ -51,7 +49,6 @@ export function CompanionStatsPanel({
   const rarityRgb = dark
     ? BUDDY_RARITY_RGB_DARK[companion.rarity]
     : BUDDY_RARITY_RGB_LIGHT[companion.rarity]
-  const barRgb = dark ? BUDDY_HEART_RGB_DARK : BUDDY_HEART_RGB_LIGHT
 
   return (
     <div
@@ -90,7 +87,7 @@ export function CompanionStatsPanel({
                   className="companion-stats-panel__fill"
                   style={{
                     width: `${pct}%`,
-                    backgroundColor: barRgb,
+                    backgroundColor: rarityRgb,
                   }}
                 />
               </div>

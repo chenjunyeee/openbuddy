@@ -9,6 +9,7 @@ import {
   BUDDY_RARITY_RGB_LIGHT,
 } from '@buddy/types.js'
 import { CompanionStatsPanel } from './CompanionStatsPanel'
+import { HELP_BUBBLE_MAX_LINES, HELP_BUBBLE_TEXT } from './helpBubbleText'
 import { useAppState, useSetAppState } from './BuddyState'
 
 /** 是否仍有「气泡内容」（用于保留锚点占位，失焦隐藏时不卸载以免窗口伸缩导致精灵位移） */
@@ -67,16 +68,36 @@ const PET_HEART_ROW_PLACEHOLDER = ' '.repeat(PET_HEARTS[0]!.length)
 const BUBBLE_LINE_CHARS = 20
 const BUBBLE_MAX_LINES = 10
 
-/** 按字符断行（中日文与混排可用） */
-function wrapBubbleText(text: string): string[] {
+/** 按字符断行；支持 `\n` 分段；`maxLines` 用于 /help 等较长固定文案 */
+function wrapBubbleText(
+  text: string,
+  maxLines: number = BUBBLE_MAX_LINES,
+): string[] {
   const lines: string[] = []
-  let i = 0
-  const t = text.trim()
-  while (i < t.length && lines.length < BUBBLE_MAX_LINES) {
-    lines.push(t.slice(i, i + BUBBLE_LINE_CHARS))
-    i += BUBBLE_LINE_CHARS
+  const parts = text.trim().split('\n')
+  let truncated = false
+  outer: for (let pi = 0; pi < parts.length; pi++) {
+    const part = parts[pi]!
+    if (lines.length >= maxLines) {
+      truncated = true
+      break
+    }
+    if (part === '') {
+      lines.push(' ')
+      if (lines.length >= maxLines) break
+      continue
+    }
+    let i = 0
+    while (i < part.length) {
+      if (lines.length >= maxLines) {
+        truncated = true
+        break outer
+      }
+      lines.push(part.slice(i, i + BUBBLE_LINE_CHARS))
+      i += BUBBLE_LINE_CHARS
+    }
   }
-  if (i < t.length && lines.length > 0) {
+  if (truncated && lines.length > 0) {
     const last = lines[lines.length - 1]!
     lines[lines.length - 1] =
       last.slice(0, Math.max(0, BUBBLE_LINE_CHARS - 1)) + '…'
@@ -84,16 +105,36 @@ function wrapBubbleText(text: string): string[] {
   return lines
 }
 
-/** 流式输出：不整体 trim，避免前半段被吃掉 */
-function wrapBubbleStreaming(text: string): string[] {
+/** 流式输出：不整体 trim；支持 `\n` */
+function wrapBubbleStreaming(
+  text: string,
+  maxLines: number = BUBBLE_MAX_LINES,
+): string[] {
   const lines: string[] = []
-  let i = 0
-  const t = text.replace(/\r/g, '')
-  while (i < t.length && lines.length < BUBBLE_MAX_LINES) {
-    lines.push(t.slice(i, i + BUBBLE_LINE_CHARS))
-    i += BUBBLE_LINE_CHARS
+  const parts = text.replace(/\r/g, '').split('\n')
+  let truncated = false
+  outer: for (let pi = 0; pi < parts.length; pi++) {
+    const part = parts[pi]!
+    if (lines.length >= maxLines) {
+      truncated = true
+      break
+    }
+    if (part === '') {
+      lines.push(' ')
+      if (lines.length >= maxLines) break
+      continue
+    }
+    let i = 0
+    while (i < part.length) {
+      if (lines.length >= maxLines) {
+        truncated = true
+        break outer
+      }
+      lines.push(part.slice(i, i + BUBBLE_LINE_CHARS))
+      i += BUBBLE_LINE_CHARS
+    }
   }
-  if (i < t.length && lines.length > 0) {
+  if (truncated && lines.length > 0) {
     const last = lines[lines.length - 1]!
     lines[lines.length - 1] =
       last.slice(0, Math.max(0, BUBBLE_LINE_CHARS - 1)) + '…'
@@ -105,18 +146,22 @@ function PetBubble({
   loading,
   text,
   onClose,
+  maxLines,
 }: {
   loading: boolean
   text: string | undefined
   onClose?: () => void
+  /** 默认 `BUBBLE_MAX_LINES`；/help 等值更大以免截断 */
+  maxLines?: number
 }): React.ReactElement {
   const raw = text ?? ''
+  const lineCap = maxLines ?? BUBBLE_MAX_LINES
   const streaming = loading && raw.length > 0
   const linesLoadingOnly = loading && !streaming
   const lines = streaming
-    ? wrapBubbleStreaming(raw)
+    ? wrapBubbleStreaming(raw, lineCap)
     : !loading && raw.trim()
-      ? wrapBubbleText(raw)
+      ? wrapBubbleText(raw, lineCap)
       : []
   const showClose = Boolean(onClose) && !loading
 
@@ -259,7 +304,15 @@ export function PetView(): React.ReactElement {
 
   const appearance = useAppState(s => s.shellAppearance)
   const darkPalette =
-    appearance === 'transparent-dark' || appearance === 'solid-night'
+    appearance === 'transparent-dark' ||
+    appearance === 'sprite-backdrop-dark'
+  const spriteBackdropClass =
+    appearance === 'sprite-backdrop-light'
+      ? 'pet-sprite-stage--backdrop-light'
+      : appearance === 'sprite-backdrop-dark'
+        ? 'pet-sprite-stage--backdrop-dark'
+        : ''
+  const cloudsHidden = useAppState(s => s.petCloudsHidden === true)
   /** 与种族无关：睡眠由 `petMood`；星星仅在「在想中」阶段。 */
   const petMood = useAppState(s => s.petMood)
   const companion = getCompanion()
@@ -383,13 +436,24 @@ export function PetView(): React.ReactElement {
               <PetBubble
                 loading={Boolean(chatLoading)}
                 text={chatBubble}
+                maxLines={
+                  chatBubble === HELP_BUBBLE_TEXT
+                    ? HELP_BUBBLE_MAX_LINES
+                    : undefined
+                }
                 onClose={dismissChatBubble}
               />
             ) : null}
           </div>
         ) : null}
-        <div className="pet-sprite-stage">
-          <PetSpriteClouds />
+        <div
+          className={
+            spriteBackdropClass
+              ? `pet-sprite-stage ${spriteBackdropClass}`
+              : 'pet-sprite-stage'
+          }
+        >
+          {!cloudsHidden ? <PetSpriteClouds /> : null}
           <div className={spriteWrapClassNames}>
             <pre
               className="sprite-pre"

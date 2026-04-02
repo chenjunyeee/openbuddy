@@ -66,27 +66,6 @@ body {
   pointer-events: none !important;
 }
 
-/* /c：浅色或深色带边框面板 */
-.shell--solid {
-  padding: 8px 10px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(20, 20, 24, 0.16);
-  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.1);
-}
-
-.shell--solid-day {
-  background: rgba(244, 245, 249, 0.96);
-  border-color: rgba(20, 20, 24, 0.14);
-}
-
-.shell--solid-night {
-  background: rgba(22, 22, 28, 0.96);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 4px 28px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-}
-
 /* 桌宠在上、输入在右下侧下方，整体右对齐 */
 .pet-column {
   -webkit-app-region: no-drag;
@@ -154,6 +133,72 @@ body {
   display: inline-block;
   position: relative;
   padding-top: 46px;
+}
+
+/*
+ * /c 精灵衬底：仅靠一道径向渐变从实色收到透明（不用 mask，避免「蒙版轮廓线」）；
+ * 椭圆略大于舞台、层稍放大，外沿多段低 alpha + blur 消除可见边界与量化阶。
+ */
+.pet-sprite-stage.pet-sprite-stage--backdrop-light::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 30px;
+  bottom: -14px;
+  width: min(340px, 142%);
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: radial-gradient(
+    ellipse 118% 128% at 50% 52%,
+    rgb(255, 250, 244) 0%,
+    rgba(255, 250, 244, 0.94) 16%,
+    rgba(255, 250, 244, 0.72) 34%,
+    rgba(255, 250, 244, 0.42) 50%,
+    rgba(255, 250, 244, 0.2) 64%,
+    rgba(255, 250, 244, 0.09) 76%,
+    rgba(255, 250, 244, 0.035) 86%,
+    rgba(255, 250, 244, 0.012) 93%,
+    rgba(255, 250, 244, 0.004) 97%,
+    transparent 100%
+  );
+  filter: blur(9px);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.pet-sprite-stage.pet-sprite-stage--backdrop-dark::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 30px;
+  bottom: -14px;
+  width: min(340px, 142%);
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: radial-gradient(
+    ellipse 118% 128% at 50% 52%,
+    rgb(5, 6, 10) 0%,
+    rgba(5, 6, 10, 0.95) 18%,
+    rgba(5, 6, 10, 0.68) 36%,
+    rgba(5, 6, 10, 0.38) 52%,
+    rgba(5, 6, 10, 0.18) 66%,
+    rgba(5, 6, 10, 0.08) 78%,
+    rgba(5, 6, 10, 0.03) 88%,
+    rgba(5, 6, 10, 0.012) 94%,
+    rgba(5, 6, 10, 0.004) 97%,
+    transparent 100%
+  );
+  filter: blur(10px);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .pet-sprite-sprite-wrap {
@@ -534,11 +579,12 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* 叠在角上，不占正文排布；扩大可点热区 */
+/* 叠在角上，不占正文排布；扩大可点热区。须高于后绘制的 .pet-chat-bubble，否则会点不穿 */
 .pet-chat-bubble__close {
   position: absolute;
   top: 2px;
   right: 2px;
+  z-index: 3;
   width: 22px;
   height: 22px;
   margin: 0;

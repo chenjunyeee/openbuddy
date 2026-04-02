@@ -30,6 +30,7 @@ import {
   getOpenclawHelpSteps,
   OPENCLAW_LOCAL_DEFAULT_URL,
 } from '../openclawSetupZh'
+import { HELP_BUBBLE_TEXT } from './helpBubbleText'
 
 function isSlashRandomPet(t: string): boolean {
   return t === '/p' || t.startsWith('/p ')
@@ -39,13 +40,29 @@ function isSlashNight(t: string): boolean {
   return t === '/c' || t.startsWith('/c ')
 }
 
+/** 合法化外观；旧 solid-* 映射到精灵底以免 state 失效 */
+function normalizeShellAppearance(
+  a:
+    | ShellAppearance
+    | 'solid-day'
+    | 'solid-night'
+    | undefined,
+): ShellAppearance {
+  if (a === 'transparent-dark') return 'transparent-dark'
+  if (a === 'sprite-backdrop-light') return 'sprite-backdrop-light'
+  if (a === 'sprite-backdrop-dark') return 'sprite-backdrop-dark'
+  if (a === 'solid-day') return 'sprite-backdrop-light'
+  if (a === 'solid-night') return 'sprite-backdrop-dark'
+  return 'transparent'
+}
+
 function nextShellAppearance(
   current: ShellAppearance | undefined,
 ): ShellAppearance {
-  const c = current ?? 'transparent'
+  const c = normalizeShellAppearance(current)
   if (c === 'transparent') return 'transparent-dark'
-  if (c === 'transparent-dark') return 'solid-day'
-  if (c === 'solid-day') return 'solid-night'
+  if (c === 'transparent-dark') return 'sprite-backdrop-light'
+  if (c === 'sprite-backdrop-light') return 'sprite-backdrop-dark'
   return 'transparent'
 }
 
@@ -75,11 +92,53 @@ function formatTestRollBubble(bones: CompanionBones): string {
   return `抽到了：${parts.join(' · ')}`
 }
 
-/** 「在想中」时输入框仅允许键入本地快捷指令的前缀或完整内容 */
+/** `/help` 输入过程中的合法前缀（`/`, `/h`, …, `/help`） */
+function isHelpCommandPrefix(v: string): boolean {
+  const h = '/help'
+  if (!v.startsWith('/')) return false
+  const x = v.toLowerCase()
+  return h.startsWith(x) && x.length <= h.length
+}
+
+/** `/weather` 与简写 `/w`（避免误匹配 `/wax` 等：仅 `/w` 或 `/w ` 打头） */
+function isSlashWeather(low: string): boolean {
+  return (
+    low === '/weather' ||
+    low.startsWith('/weather ') ||
+    low === '/w' ||
+    /^\/w\s/.test(low)
+  )
+}
+
+/** `/weather` 输入白名单：`/w`、`/we`… 直至完整词 */
+function isWeatherCommandDraft(v: string): boolean {
+  if (!v.startsWith('/')) return false
+  const x = v.toLowerCase()
+  if (x === '/w' || /^\/w\s/.test(x)) return true
+  const wx = '/weather'
+  return wx.startsWith(x) && x.length <= wx.length
+}
+
+/**
+ * `/roll` 与简写 `/r`（须排在稀有度 `/rare` 等之前判别；`/r`+空格 视作 roll）
+ */
+function isSlashRoll(low: string): boolean {
+  return (
+    low === '/roll' ||
+    low.startsWith('/roll ') ||
+    low === '/r' ||
+    /^\/r\s/.test(low)
+  )
+}
+
+/** 「在想中」时输入框仅允许键入本地便民指令的前缀或完整内容 */
 function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
+  if (isHelpCommandPrefix(v)) return true
+  if (/^\/help(\s.*)?$/i.test(v)) return true
   if (v === '/') return true
   if (/^\/c(\s.*)?$/i.test(v)) return true
+  if (isWeatherCommandDraft(v)) return true
   if (/^\/stat(\s.*)?$/i.test(v)) return true
   if (/^\/solo(\s.*)?$/i.test(v)) return true
   if (/^\/bubble(\s.*)?$/i.test(v)) return true
@@ -89,6 +148,7 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
     '/test off',
     '/test',
     '/roll',
+    '/r',
     '/high',
     '/low',
     '/common',
@@ -306,6 +366,18 @@ function ChatDialogPanel(): React.ReactElement {
     const t = draft.trim()
     if (!t) return
 
+    const low = t.trim().toLowerCase()
+    if (low === '/help' || low.startsWith('/help ')) {
+      setDraft('')
+      setAppState(s => ({
+        ...s,
+        chatBubble: HELP_BUBBLE_TEXT,
+        chatBubbleIdleHidden: false,
+        openclawGuideStep: undefined,
+      }))
+      return
+    }
+
     if (isSlashRandomPet(t)) {
       setDraft('')
       setAppState(s => ({
@@ -323,7 +395,15 @@ function ChatDialogPanel(): React.ReactElement {
       return
     }
 
-    const low = t.trim().toLowerCase()
+    if (isSlashWeather(low)) {
+      setDraft('')
+      setAppState(s => ({
+        ...s,
+        petCloudsHidden: !(s.petCloudsHidden === true),
+      }))
+      return
+    }
+
     if (low === '/stat off' || low.startsWith('/stat off ')) {
       setDraft('')
       setAppState(s => ({ ...s, statPanelOpen: false }))
@@ -413,12 +493,12 @@ function ChatDialogPanel(): React.ReactElement {
       return
     }
 
-    if (low === '/roll' || low.startsWith('/roll ')) {
+    if (isSlashRoll(low)) {
       if (!getGlobalConfig().testMode) {
         setDraft('')
         setAppState(s => ({
           ...s,
-          chatBubble: '请先发 /test 进入测试模式，再用 /roll 体验抽取。',
+          chatBubble: '请先发 /test 进入测试模式，再用 /roll 或 /r 体验抽取。',
         }))
         return
       }
@@ -604,14 +684,10 @@ function ChatDialogPanel(): React.ReactElement {
   }, [chatPanelVisible])
 
   const inputPlaceholder = useMemo((): string => {
-    const tail = ' · /c · /solo /stat /bubble off'
-    if (chatLoading) return '在想中：仅可 /c、/solo…'
-    if (testMode) return `测试：/roll · /high /low · /test off${tail}`
-    if (openclawConfigured) return `Enter 发送${tail}`
-    if (typeof openclawGuideStep === 'number')
-      return `引导中：留空 Enter 下一步${tail}`
-    return `Enter 发送${tail}`
-  }, [chatLoading, openclawConfigured, openclawGuideStep, testMode])
+    const base = 'Enter 输入 · /help'
+    if (chatLoading) return `在想中 · /help`
+    return base
+  }, [chatLoading])
 
   const onDraftChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
@@ -656,7 +732,7 @@ function ChatDialogPanel(): React.ReactElement {
         rows={1}
         value={draft}
         placeholder={inputPlaceholder}
-        aria-label="消息输入，Enter 发送"
+        aria-label="输入消息，Enter 发送；发 /help 查看操作说明"
         disabled={!chatPanelVisible}
         tabIndex={chatPanelVisible ? 0 : -1}
         onChange={onDraftChange}
@@ -681,12 +757,10 @@ const SHELL_FIT_UNION_SELECTOR =
   '.pet-bubble-anchor, .pet-sprite-stage, .pet-chat-bubble-tail'
 
 function shellClassName(appearance: ShellAppearance | undefined): string {
-  const a = appearance ?? 'transparent'
-  if (a === 'transparent') return 'shell shell--transparent'
-  if (a === 'transparent-dark')
+  const a = normalizeShellAppearance(appearance)
+  if (a === 'transparent-dark' || a === 'sprite-backdrop-dark')
     return 'shell shell--transparent shell--palette-night'
-  if (a === 'solid-day') return 'shell shell--solid shell--solid-day'
-  return 'shell shell--solid shell--solid-night shell--palette-night'
+  return 'shell shell--transparent'
 }
 
 function measureShellFitPx(el: HTMLElement): { w: number; h: number } {
