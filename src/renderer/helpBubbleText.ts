@@ -17,6 +17,7 @@ OpenClaw）
 /openclaw Token
 /openclaw clear
 
-/test：开发者测试（仅 /reboot）
+/test：开发者测试
 /reboot：清桌宠回到开蛋
+/line：显示或隐藏内容区边界线
 /test off：退出测试`

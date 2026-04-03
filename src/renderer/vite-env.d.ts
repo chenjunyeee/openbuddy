@@ -6,10 +6,12 @@ declare global {
       platform: NodeJS.Platform
       isDev: boolean
       resizeToFit?: (width: number, height: number) => Promise<void>
-      sendSoloPointerState?: (payload: {
-        solo: boolean
-        overPet?: boolean
-      }) => void
+      sendSoloPointerState?: (
+        payload:
+          | { mode: 'disabled' }
+          | { solo: true; overPet: boolean }
+          | { solo: false; overShell: boolean },
+      ) => void
       subscribeChatStream?: (
         handler: (payload: {
           streamSessionId: number

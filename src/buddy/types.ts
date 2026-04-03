@@ -294,4 +294,6 @@ export type BuddyAppState = {
   petSoloMode?: boolean
   /** `/weather`：为 true 时隐藏顶栏云朵（保留顶距，避免 /c 白黑衬底被纵向压扁） */
   petCloudsHidden?: boolean
+  /** 仅 testMode：/line 在客户区边缘画调试线（`#root.root--test-outline`，与 buddy-resize / 穿透一致） */
+  testShellOutline?: boolean
 }

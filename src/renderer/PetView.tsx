@@ -207,26 +207,15 @@ function companionAppearanceKey(c: {
 }
 
 /**
- * 背景柔边小云：径向渐变 + 椭圆叠层，纯 CSS 飘动（整层横移 + 单泡上下），与精灵 tick 无关。
+ * 顶栏像素云：三团弧排（左抬高 / 中棚云 / 右略抬），`box-shadow` 拼块 + 飘动；层宽计入 buddy-resize union。
  */
 function PetSpriteClouds(): React.ReactElement {
   return (
     <div className="pet-sprite-clouds" aria-hidden>
       <div className="pet-sprite-clouds-band">
-        <div className="pet-sprite-cluster pet-sprite-cluster--a">
-          <span className="pet-sprite-bubble pet-sprite-bubble--a1" />
-          <span className="pet-sprite-bubble pet-sprite-bubble--a2" />
-          <span className="pet-sprite-bubble pet-sprite-bubble--a3" />
-        </div>
-        <div className="pet-sprite-cluster pet-sprite-cluster--b">
-          <span className="pet-sprite-bubble pet-sprite-bubble--b1" />
-          <span className="pet-sprite-bubble pet-sprite-bubble--b2" />
-          <span className="pet-sprite-bubble pet-sprite-bubble--b3" />
-        </div>
-        <div className="pet-sprite-cluster pet-sprite-cluster--c">
-          <span className="pet-sprite-bubble pet-sprite-bubble--c1" />
-          <span className="pet-sprite-bubble pet-sprite-bubble--c2" />
-        </div>
+        <span className="pet-pixel-cloud pet-pixel-cloud--a" />
+        <span className="pet-pixel-cloud pet-pixel-cloud--b" />
+        <span className="pet-pixel-cloud pet-pixel-cloud--c" />
       </div>
     </div>
   )

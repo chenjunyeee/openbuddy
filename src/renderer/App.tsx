@@ -86,6 +86,10 @@ function isSlashReboot(low: string): boolean {
   return low === '/reboot' || low.startsWith('/reboot ')
 }
 
+function isSlashTestLine(low: string): boolean {
+  return low === '/line' || low.startsWith('/line ')
+}
+
 /** 「在想中」时输入框仅允许键入本地便民指令的前缀或完整内容 */
 function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
@@ -99,7 +103,7 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (/^\/bubble(\s.*)?$/i.test(v)) return true
   if (/^\/openclaw(\s.*)?$/i.test(v)) return true
   if (!testMode) return false
-  const slashed = ['/test off', '/test', '/reboot']
+  const slashed = ['/test off', '/test', '/reboot', '/line']
   for (const full of slashed) {
     if (full.startsWith(v) || v === full) return true
     if (
@@ -417,6 +421,7 @@ function ChatDialogPanel(): React.ReactElement {
       setAppState(s => ({
         ...s,
         testMode: false,
+        testShellOutline: false,
         chatBubble: '已退出测试模式。',
       }))
       return
@@ -434,8 +439,36 @@ function ChatDialogPanel(): React.ReactElement {
         ...s,
         testMode: true,
         chatBubble:
-          '测试模式：仅 /reboot 清除桌宠并回到开蛋（与首次启动一致）。抽卡仅从孵蛋获得。/test off 退出。',
+          '测试模式：/reboot 清桌宠回开蛋；/line 切换窗口内容边界线；抽卡仅孵蛋。/test off 退出。',
       }))
+      return
+    }
+
+    if (isSlashTestLine(low)) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        setAppState(s => ({
+          ...s,
+          chatBubble: '仅测试模式可用：先发 /test。',
+        }))
+        return
+      }
+      setDraft('')
+      const rest = low.slice('/line'.length).trim()
+      setAppState(s => {
+        const cur = s.testShellOutline === true
+        let next: boolean
+        if (rest === 'on' || rest === '1') next = true
+        else if (rest === 'off' || rest === '0') next = false
+        else next = !cur
+        return {
+          ...s,
+          testShellOutline: next,
+          chatBubble: next
+            ? '已显示内容区边界线（/line 再发一次或由 /line off 关闭）。'
+            : '已隐藏边界线。',
+        }
+      })
       return
     }
 
@@ -480,6 +513,7 @@ function ChatDialogPanel(): React.ReactElement {
         openclawGuideStep: undefined,
         chatLoading: false,
         petMood: undefined,
+        testShellOutline: false,
       }))
       return
     }
@@ -662,17 +696,19 @@ function ChatDialogPanel(): React.ReactElement {
   )
 }
 
-/** 气泡增高时窗口向上扩展；预留竖直缓冲 */
-const BUBBLE_STACK_RESERVE_PX = 88
-const RESIZE_MARGIN = 8
+/** 气泡增高时窗口向上扩展；略大于一行即可，过大则窗顶长期一堆空白 */
+const BUBBLE_STACK_RESERVE_PX = 40
+/** 水平多留一点盖住尾巴；竖直少留降低顶/底空白 */
+const RESIZE_MARGIN_X = 8
+const RESIZE_MARGIN_Y = 4
 /** 取整后仍易少 1px；主进程也会 ±1 忽略，渲染端略放大更稳 */
 const FIT_EXTRA_SLACK_PX = 2
 /** CSS：tail `right:-5` + 5px 三角；引擎常对 0×0 边框三角返回空 rect，必须几何补足 */
 const BUBBLE_TAIL_EXTEND_RIGHT_PX = 8
 
-/** 参与 union：锚点、精灵舞台（含云朵等 absolute）、尾巴节点（能测到则并入） */
+/** 参与 union：锚点、精灵舞台、像素云朵层（动效会超出舞台 layout 盒）、尾巴节点 */
 const SHELL_FIT_UNION_SELECTOR =
-  '.pet-bubble-anchor, .pet-sprite-stage, .pet-chat-bubble-tail'
+  '.pet-bubble-anchor, .pet-sprite-stage, .pet-sprite-clouds, .pet-chat-bubble-tail'
 
 function shellClassName(appearance: ShellAppearance | undefined): string {
   const a = normalizeShellAppearance(appearance)
@@ -703,17 +739,20 @@ function measureShellFitPx(el: HTMLElement): { w: number; h: number } {
     right = Math.max(right, o.right + BUBBLE_TAIL_EXTEND_RIGHT_PX)
   }
   const w =
-    Math.ceil(right - left + RESIZE_MARGIN * 2) + FIT_EXTRA_SLACK_PX
+    Math.ceil(right - left + RESIZE_MARGIN_X * 2) + FIT_EXTRA_SLACK_PX
   const h =
     Math.ceil(
-      bottom - top + BUBBLE_STACK_RESERVE_PX + RESIZE_MARGIN * 2,
+      bottom -
+        top +
+        BUBBLE_STACK_RESERVE_PX +
+        RESIZE_MARGIN_Y * 2,
     ) + FIT_EXTRA_SLACK_PX
   return { w, h }
 }
 
 /**
- * 仅桌宠：主进程对窗口 setIgnoreMouseEvents，透明区点到后面应用/桌面；
- * 移入 .pet-sprite-stage 时恢复接收（forward 以便跟踪指针）。
+ * 透明窗：主进程 setIgnoreMouseEvents + forward，衬底空白区点到后面应用/桌面。
+ * solo：仅 .pet-sprite-stage 接收；非 solo：整 .shell（气泡/输入等）接收，#root 余白穿透。
  */
 function PetSoloPointerBridge(): null {
   const petSoloMode = useAppState(s => s.petSoloMode === true)
@@ -722,20 +761,21 @@ function PetSoloPointerBridge(): null {
     const send = window.buddyDesktop?.sendSoloPointerState
     if (!send) return
 
-    if (!petSoloMode) {
-      send({ solo: false, overPet: false })
-      return
-    }
-
     let raf = 0
-    let lastOver: boolean | null = null
+    let lastAccept: boolean | null = null
 
     const flush = (clientX: number, clientY: number): void => {
       const el = document.elementFromPoint(clientX, clientY)
-      const overPet = Boolean(el?.closest?.('.pet-sprite-stage'))
-      if (lastOver === overPet) return
-      lastOver = overPet
-      send({ solo: true, overPet })
+      const accept = petSoloMode
+        ? Boolean(el?.closest?.('.pet-sprite-stage'))
+        : Boolean(el?.closest?.('.shell'))
+      if (lastAccept === accept) return
+      lastAccept = accept
+      send(
+        petSoloMode
+          ? { solo: true, overPet: accept }
+          : { solo: false, overShell: accept },
+      )
     }
 
     const onPointer = (e: PointerEvent): void => {
@@ -746,7 +786,8 @@ function PetSoloPointerBridge(): null {
       })
     }
 
-    send({ solo: true, overPet: false })
+    lastAccept = null
+    send(petSoloMode ? { solo: true, overPet: false } : { solo: false, overShell: false })
 
     window.addEventListener('pointermove', onPointer, { capture: true })
     window.addEventListener('pointerdown', onPointer, { capture: true })
@@ -755,7 +796,7 @@ function PetSoloPointerBridge(): null {
       window.removeEventListener('pointermove', onPointer, { capture: true })
       window.removeEventListener('pointerdown', onPointer, { capture: true })
       if (raf) window.cancelAnimationFrame(raf)
-      send({ solo: false, overPet: false })
+      send({ mode: 'disabled' })
     }
   }, [petSoloMode])
 
@@ -765,6 +806,18 @@ function PetSoloPointerBridge(): null {
 function Shell(): React.ReactElement {
   const setAppState = useSetAppState()
   const hasHatchedCompanion = useAppState(s => s.hasHatchedCompanion === true)
+  const testShellOutlinePaint = useAppState(
+    s => s.testMode === true && s.testShellOutline === true,
+  )
+
+  useEffect(() => {
+    const root = document.getElementById('root')
+    if (!root) return
+    root.classList.toggle('root--test-outline', testShellOutlinePaint)
+    return () => {
+      root.classList.remove('root--test-outline')
+    }
+  }, [testShellOutlinePaint])
   const shellAppearance = useAppState(s => s.shellAppearance)
   const statPanelOpen = useAppState(s => s.statPanelOpen === true)
   const petSoloMode = useAppState(s => s.petSoloMode === true)
@@ -871,9 +924,12 @@ function Shell(): React.ReactElement {
     hasHatchedCompanion,
   ])
 
-  const shellClass =
-    shellClassName(shellAppearance) +
-    (petSoloMode ? ' shell--pet-solo-passthrough' : '')
+  const shellClass = [
+    shellClassName(shellAppearance),
+    petSoloMode ? 'shell--pet-solo-passthrough' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div className={shellClass} ref={shellRef}>

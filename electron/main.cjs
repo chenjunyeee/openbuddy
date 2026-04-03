@@ -634,11 +634,14 @@ app.whenReady().then(() => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
     const p = payload && typeof payload === 'object' ? payload : {}
-    if (!p.solo) {
+    /** 渲染卸载 / StrictMode：恢复整窗命中，避免卡在全穿透 */
+    if (p.mode === 'disabled') {
       win.setIgnoreMouseEvents(false)
       return
     }
-    win.setIgnoreMouseEvents(!p.overPet, { forward: true })
+    const solo = p.solo === true
+    const accept = solo ? p.overPet === true : p.overShell === true
+    win.setIgnoreMouseEvents(!accept, { forward: true })
   })
 
   ipcMain.handle('buddy-chat', async (event, payload) => {
