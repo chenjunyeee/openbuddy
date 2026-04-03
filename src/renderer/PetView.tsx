@@ -240,6 +240,13 @@ export function PetView(): React.ReactElement {
   const petSoloMode = useAppState(s => s.petSoloMode === true)
   const hasHatchedCompanion = useAppState(s => s.hasHatchedCompanion === true)
   const bubbleSlotActive = useAppState(hasPetSideSlotContent)
+  /**
+   * 已孵化即有侧栏锚点 DOM（含 solo）：避免关气泡或进 solo 时卸载锚点 → union 变窄 → buddy-resize 整窗闪。
+   * 仅桌宠时 `shouldShowPetSideSlot` 为 false，用 --concealed + 穿透命中，不挡操作。
+   */
+  const bubbleAnchorMounted = bubbleSlotActive || hasHatchedCompanion
+  const bubbleAnchorReserve =
+    hasHatchedCompanion && !bubbleSlotActive
   const bubbleHasChat = useAppState(hasPetBubbleContent)
   const showBubblePaint = useAppState(shouldShowPetSideSlot)
   const statPanelOpen = useAppState(s => s.statPanelOpen === true)
@@ -429,17 +436,23 @@ export function PetView(): React.ReactElement {
       .filter(Boolean)
       .join(' ')
 
+    const eggAnchorClass = [
+      'pet-bubble-anchor',
+      !showBubblePaint || bubbleAnchorReserve
+        ? 'pet-bubble-anchor--concealed'
+        : null,
+      bubbleAnchorReserve ? 'pet-bubble-anchor--reserve' : null,
+    ]
+      .filter(Boolean)
+      .join(' ')
+
     return (
       <div className="pet-view">
         <div className="pet-row">
-          {bubbleSlotActive ? (
+          {bubbleAnchorMounted ? (
             <div
-              className={
-                showBubblePaint
-                  ? 'pet-bubble-anchor'
-                  : 'pet-bubble-anchor pet-bubble-anchor--concealed'
-              }
-              aria-hidden={!showBubblePaint}
+              className={eggAnchorClass}
+              aria-hidden={!showBubblePaint || bubbleAnchorReserve}
             >
               {statPanelOpen ? (
                 <CompanionStatsPanel
@@ -589,17 +602,23 @@ export function PetView(): React.ReactElement {
       ? bodyStartIdx + hatLineIndex
       : null
 
+  const petAnchorClass = [
+    'pet-bubble-anchor',
+    !showBubblePaint || bubbleAnchorReserve
+      ? 'pet-bubble-anchor--concealed'
+      : null,
+    bubbleAnchorReserve ? 'pet-bubble-anchor--reserve' : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <div className="pet-view">
       <div className="pet-row">
-        {bubbleSlotActive ? (
+        {bubbleAnchorMounted ? (
           <div
-            className={
-              showBubblePaint
-                ? 'pet-bubble-anchor'
-                : 'pet-bubble-anchor pet-bubble-anchor--concealed'
-            }
-            aria-hidden={!showBubblePaint}
+            className={petAnchorClass}
+            aria-hidden={!showBubblePaint || bubbleAnchorReserve}
           >
             {statPanelOpen ? (
               <CompanionStatsPanel

@@ -609,6 +609,12 @@ body {
   pointer-events: none;
 }
 
+/* 已孵化、气泡与属性均关闭：占位保宽，避免关气泡卸载锚点导致 buddy-resize 整窗跳 */
+.pet-bubble-anchor--reserve {
+  min-height: 1px;
+  flex-shrink: 0;
+}
+
 /* 属性块在锚点内铺满宽度；与下方气泡留缝 */
 .pet-bubble-anchor .companion-stats-panel {
   width: 100%;
