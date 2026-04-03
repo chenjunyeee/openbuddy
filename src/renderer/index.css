@@ -137,15 +137,15 @@ body {
 
 /*
  * /c 精灵衬底：仅靠一道径向渐变从实色收到透明（不用 mask，避免「蒙版轮廓线」）；
- * 椭圆略大于舞台、层稍放大，外沿多段低 alpha + blur 消除可见边界与量化阶。
+ * 椭圆紧包精灵区（略大于 ASCII），外沿多段低 alpha + blur 消除可见边界与量化阶。
  */
 .pet-sprite-stage.pet-sprite-stage--backdrop-light::before {
   content: '';
   position: absolute;
   left: 50%;
-  top: 30px;
-  bottom: -14px;
-  width: min(340px, 142%);
+  top: 36px;
+  bottom: -8px;
+  width: min(272px, 115%);
   transform: translateX(-50%);
   z-index: 0;
   pointer-events: none;
@@ -153,19 +153,19 @@ body {
   outline: none;
   box-shadow: none;
   background: radial-gradient(
-    ellipse 118% 128% at 50% 52%,
+    ellipse 96% 104% at 50% 54%,
     rgb(255, 250, 244) 0%,
-    rgba(255, 250, 244, 0.94) 16%,
-    rgba(255, 250, 244, 0.72) 34%,
-    rgba(255, 250, 244, 0.42) 50%,
-    rgba(255, 250, 244, 0.2) 64%,
-    rgba(255, 250, 244, 0.09) 76%,
-    rgba(255, 250, 244, 0.035) 86%,
-    rgba(255, 250, 244, 0.012) 93%,
-    rgba(255, 250, 244, 0.004) 97%,
+    rgba(255, 250, 244, 0.94) 12%,
+    rgba(255, 250, 244, 0.72) 26%,
+    rgba(255, 250, 244, 0.42) 42%,
+    rgba(255, 250, 244, 0.2) 56%,
+    rgba(255, 250, 244, 0.09) 70%,
+    rgba(255, 250, 244, 0.035) 82%,
+    rgba(255, 250, 244, 0.012) 91%,
+    rgba(255, 250, 244, 0.004) 96%,
     transparent 100%
   );
-  filter: blur(9px);
+  filter: blur(7px);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
@@ -174,9 +174,9 @@ body {
   content: '';
   position: absolute;
   left: 50%;
-  top: 30px;
-  bottom: -14px;
-  width: min(340px, 142%);
+  top: 36px;
+  bottom: -8px;
+  width: min(272px, 115%);
   transform: translateX(-50%);
   z-index: 0;
   pointer-events: none;
@@ -184,19 +184,19 @@ body {
   outline: none;
   box-shadow: none;
   background: radial-gradient(
-    ellipse 118% 128% at 50% 52%,
+    ellipse 96% 104% at 50% 54%,
     rgb(5, 6, 10) 0%,
-    rgba(5, 6, 10, 0.95) 18%,
-    rgba(5, 6, 10, 0.68) 36%,
-    rgba(5, 6, 10, 0.38) 52%,
-    rgba(5, 6, 10, 0.18) 66%,
-    rgba(5, 6, 10, 0.08) 78%,
-    rgba(5, 6, 10, 0.03) 88%,
-    rgba(5, 6, 10, 0.012) 94%,
-    rgba(5, 6, 10, 0.004) 97%,
+    rgba(5, 6, 10, 0.95) 14%,
+    rgba(5, 6, 10, 0.68) 28%,
+    rgba(5, 6, 10, 0.38) 44%,
+    rgba(5, 6, 10, 0.18) 58%,
+    rgba(5, 6, 10, 0.08) 72%,
+    rgba(5, 6, 10, 0.03) 84%,
+    rgba(5, 6, 10, 0.012) 92%,
+    rgba(5, 6, 10, 0.004) 96%,
     transparent 100%
   );
-  filter: blur(10px);
+  filter: blur(8px);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
