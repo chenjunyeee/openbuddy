@@ -7,20 +7,8 @@ import React, {
   useState,
 } from 'react'
 import { getGlobalConfig, setGlobalConfig } from '@buddy/config.js'
-import {
-  clearRollCache,
-  companionUserId,
-  getCompanion,
-  roll,
-} from '@buddy/companion.js'
-import {
-  RARITIES,
-  type BuddyAppState,
-  type CompanionBones,
-  type Rarity,
-  type ShellAppearance,
-  voidling,
-} from '@buddy/types.js'
+import { clearRollCache, getCompanion } from '@buddy/companion.js'
+import { type BuddyAppState, type ShellAppearance } from '@buddy/types.js'
 import {
   BuddyStateProvider,
   useAppState,
@@ -67,32 +55,6 @@ function nextShellAppearance(
   return 'transparent'
 }
 
-function parseTestRaritySlash(t: string): Rarity | null {
-  const s = t.trim().toLowerCase()
-  if (!s.startsWith('/')) return null
-  const token = s.split(/\s+/u)[0]!.slice(1)
-  return (RARITIES as readonly string[]).includes(token) ? (token as Rarity) : null
-}
-
-const RARITY_ZH: Record<Rarity, string> = {
-  common: '常见',
-  uncommon: '少见',
-  rare: '稀有',
-  epic: '史诗',
-  legendary: '传说',
-}
-
-function formatTestRollBubble(bones: CompanionBones): string {
-  const sp =
-    bones.species === voidling
-      ? `${bones.species}（隐藏种）`
-      : bones.species
-  const parts = [RARITY_ZH[bones.rarity], sp]
-  if (bones.shiny) parts.push('异色')
-  if (bones.hat !== 'none') parts.push(`帽子·${bones.hat}`)
-  return `抽到了：${parts.join(' · ')}`
-}
-
 /** `/help` 输入过程中的合法前缀（`/`, `/h`, …, `/help`） */
 function isHelpCommandPrefix(v: string): boolean {
   const h = '/help'
@@ -120,18 +82,6 @@ function isWeatherCommandDraft(v: string): boolean {
   return wx.startsWith(x) && x.length <= wx.length
 }
 
-/**
- * `/roll` 与简写 `/r`（须排在稀有度 `/rare` 等之前判别；`/r`+空格 视作 roll）
- */
-function isSlashRoll(low: string): boolean {
-  return (
-    low === '/roll' ||
-    low.startsWith('/roll ') ||
-    low === '/r' ||
-    /^\/r\s/.test(low)
-  )
-}
-
 function isSlashReboot(low: string): boolean {
   return low === '/reboot' || low.startsWith('/reboot ')
 }
@@ -149,20 +99,7 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (/^\/bubble(\s.*)?$/i.test(v)) return true
   if (/^\/openclaw(\s.*)?$/i.test(v)) return true
   if (!testMode) return false
-  const slashed = [
-    '/test off',
-    '/test',
-    '/roll',
-    '/r',
-    '/high',
-    '/low',
-    '/common',
-    '/uncommon',
-    '/rare',
-    '/epic',
-    '/legendary',
-    '/reboot',
-  ]
+  const slashed = ['/test off', '/test', '/reboot']
   for (const full of slashed) {
     if (full.startsWith(v) || v === full) return true
     if (
@@ -490,14 +427,14 @@ function ChatDialogPanel(): React.ReactElement {
       setGlobalConfig({
         testMode: true,
         testForcedRarity: undefined,
-        testLuck: 'normal',
-        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        testRollNonce: undefined,
+        testLuck: undefined,
       })
       setAppState(s => ({
         ...s,
         testMode: true,
         chatBubble:
-          '测试模式：/roll 预览外形；/reboot 清除桌宠并回到与首次启动一致的开蛋界面；/high /low 调节概率；/test off 退出。',
+          '测试模式：仅 /reboot 清除桌宠并回到开蛋（与首次启动一致）。抽卡仅从孵蛋获得。/test off 退出。',
       }))
       return
     }
@@ -547,95 +484,13 @@ function ChatDialogPanel(): React.ReactElement {
       return
     }
 
-    if (isSlashRoll(low)) {
-      if (!getGlobalConfig().testMode) {
-        setDraft('')
-        setAppState(s => ({
-          ...s,
-          chatBubble: '请先发 /test 进入测试模式，再用 /roll 或 /r 体验抽取。',
-        }))
-        return
-      }
-      setDraft('')
-      clearRollCache()
-      setGlobalConfig({
-        testForcedRarity: undefined,
-        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-      })
-      const { bones } = roll(companionUserId())
-      setAppState(s => ({
-        ...s,
-        statPanelOpen: true,
-        chatBubble: formatTestRollBubble(bones),
-      }))
-      return
-    }
-
-    if (low === '/high' || low.startsWith('/high ')) {
-      if (!getGlobalConfig().testMode) {
-        setDraft('')
-        setAppState(s => ({
-          ...s,
-          chatBubble: '请先发 /test，再用 /high 拉高中奖率。',
-        }))
-        return
-      }
-      setDraft('')
-      setGlobalConfig({ testLuck: 'high' })
-      setAppState(s => ({
-        ...s,
-        chatBubble:
-          '欧气已调高：更高稀有、隐藏种 voidling、异色更容易出现。发 /roll 试试。',
-      }))
-      return
-    }
-
-    if (low === '/low' || low.startsWith('/low ')) {
-      if (!getGlobalConfig().testMode) {
-        setDraft('')
-        setAppState(s => ({
-          ...s,
-          chatBubble: '请先发 /test，再用 /low 压低中奖率。',
-        }))
-        return
-      }
-      setDraft('')
-      setGlobalConfig({ testLuck: 'low' })
-      setAppState(s => ({
-        ...s,
-        chatBubble:
-          '欧气已调低：稀有与隐藏、异色更难出。发 /roll 试试，/high 可恢复。',
-      }))
-      return
-    }
-
-    const raritySlash = parseTestRaritySlash(t)
-    if (raritySlash) {
-      if (!getGlobalConfig().testMode) {
-        setDraft('')
-        return
-      }
-      setDraft('')
-      clearRollCache()
-      setGlobalConfig({
-        testForcedRarity: raritySlash,
-        testRollNonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-      })
-      setAppState(s => ({
-        ...s,
-        statPanelOpen: true,
-        chatBubble: `已按 ${raritySlash}（${RARITY_ZH[raritySlash]}）随机外形；仍可发 /roll 继续抽。`,
-      }))
-      return
-    }
-
     if (chatLoading) return
     setDraft('')
 
     if (!getGlobalConfig().companion) {
       setAppState(s => ({
         ...s,
-        chatBubble: '请先完成孵化（点击蛋下方 Hatch）。',
+        chatBubble: '请先完成孵化（点击蛋）。',
         chatBubbleIdleHidden: false,
       }))
       return

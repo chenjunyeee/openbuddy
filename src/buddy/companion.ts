@@ -152,7 +152,7 @@ function rollFrom(rng: () => number): Roll {
   const rarity = rollRarity(rng)
   const hat = rarity === 'common' ? 'none' : pick(rng, HATS)
   let species: Species = pick(rng, SPECIES_ROLLABLE)
-  // 与 rollRarity 独立：极低概率覆盖为隐藏种 voidling（/high /low 在测试模式下调节）
+  // 与 rollRarity 独立：极低概率覆盖为隐藏种 voidling（testLuck 字段已留扩展，当前无 UI 写入）
   if (rng() < secretSpeciesChanceForRoll()) species = voidling
   const bones: CompanionBones = {
     rarity,

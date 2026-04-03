@@ -1,6 +1,6 @@
 import type { Rarity, StoredCompanion } from './types.js'
 
-/** /test 下 /high、/low 调节稀有度、隐藏种、异色等概率 */
+/** 预留：测试模式下调节稀有度/异色等（当前无指令写入，孵蛋走默认权重） */
 export type TestLuck = 'low' | 'normal' | 'high'
 
 /** Standalone mock of Claude Code global config — only what `buddy` needs. */
@@ -9,12 +9,13 @@ export type BuddyGlobalConfig = {
   oauthAccount?: { accountUuid?: string }
   companion?: StoredCompanion
   companionMuted?: boolean
-  /** 输入框 /test：按稀有度刷外形时由 companion.roll 读取 */
+  /** /test：仅用于解锁 /reboot 等（抽卡仅孵蛋） */
   testMode?: boolean
+  /** 预留： companion.roll 强制稀有度（当前无 UI） */
   testForcedRarity?: Rarity
-  /** 每次刷新外形递增，避免 roll 缓存挡住随机 */
+  /** 预留：刷新 roll 缓存 nonce */
   testRollNonce?: string
-  /** 仅 testMode：/high、/low；缺省按 normal */
+  /** 预留：testLuck（当前无 UI） */
   testLuck?: TestLuck
 }
 

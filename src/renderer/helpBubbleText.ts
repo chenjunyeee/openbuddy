@@ -15,4 +15,8 @@ OpenClaw）
 /openclaw：引导或状态
 /openclaw URL Token
 /openclaw Token
-/openclaw clear`
+/openclaw clear
+
+/test：开发者测试（仅 /reboot）
+/reboot：清桌宠回到开蛋
+/test off：退出测试`

@@ -125,7 +125,7 @@ export const SPECIES = [
 ] as const
 export type Species = (typeof SPECIES)[number]
 
-/** 开盒 /roll 使用的物种池（不含隐藏种 `voidling`） */
+/** 孵化 / roll 算法使用的物种池（不含隐藏种 `voidling`） */
 export const SPECIES_ROLLABLE = SPECIES.filter(
   (s): s is Exclude<Species, typeof voidling> => s !== voidling,
 )
