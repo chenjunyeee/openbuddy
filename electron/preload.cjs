@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('buddyDesktop', {
   getProfile() {
     return ipcRenderer.invoke('buddy-get-profile')
   },
+  saveProfile(payload) {
+    return ipcRenderer.invoke('buddy-save-profile', payload)
+  },
   getPaths() {
     return ipcRenderer.invoke('buddy-get-paths')
   },

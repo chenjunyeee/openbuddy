@@ -1,0 +1,53 @@
+{
+  "adjectives": [
+    "Bouncy",
+    "Sleepy",
+    "Chaotic",
+    "Gentle",
+    "Proud",
+    "Mischievous",
+    "Dreamy",
+    "Feisty",
+    "Calm",
+    "Wiggly",
+    "Bold",
+    "Shy"
+  ],
+  "quirks": [
+    "hums when thinking.",
+    "collects shiny thoughts.",
+    "naps after big ideas.",
+    "asks too many questions.",
+    "stares into the void happily.",
+    "cheers you on quietly.",
+    "types faster than it thinks.",
+    "believes in you a little too much."
+  ],
+  "flavor": {
+    "common": [
+      "A humble desk friend.",
+      "Here for the small wins.",
+      "Keeps things grounded."
+    ],
+    "uncommon": [
+      "A little extra sparkle.",
+      "Notices the little things.",
+      "Friendly chaos nearby."
+    ],
+    "rare": [
+      "Sharp instincts.",
+      "Loves a good puzzle.",
+      "Quietly clever."
+    ],
+    "epic": [
+      "Main-character energy.",
+      "Drama optional, charm included.",
+      "Loves big ideas."
+    ],
+    "legendary": [
+      "Ancient vibe, modern hustle.",
+      "Speaks in cosmic side-eye.",
+      "Legends mention this one."
+    ]
+  }
+}

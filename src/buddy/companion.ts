@@ -1,4 +1,5 @@
 import { getGlobalConfig, type TestLuck } from './config.js'
+import personalityData from './personality-data.json'
 import {
   type Companion,
   type CompanionBones,
@@ -12,10 +13,14 @@ import {
   type Rarity,
   SECRET_SPECIES_CHANCE,
   SPECIES_ROLLABLE,
+  type Species,
+  type StoredCompanion,
   STAT_NAMES,
   voidling,
   type StatName,
 } from './types.js'
+
+const flavorByRarity = personalityData.flavor as Record<Rarity, string[]>
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
@@ -43,18 +48,18 @@ function pick<T>(rng: () => number, arr: readonly T[]): T {
 
 /** 测试模式「欧气」：抬高/压低高稀有与隐藏、异色权重 */
 const RARITY_WEIGHTS_TEST_HIGH = {
-  common: 45,
-  uncommon: 28,
-  rare: 15,
-  epic: 8,
-  legendary: 4,
+  common: 22,
+  uncommon: 32,
+  rare: 28,
+  epic: 12,
+  legendary: 6,
 } as const satisfies Record<Rarity, number>
 
 const RARITY_WEIGHTS_TEST_LOW = {
-  common: 72,
-  uncommon: 18,
-  rare: 7,
-  epic: 2,
+  common: 52,
+  uncommon: 30,
+  rare: 12,
+  epic: 5,
   legendary: 1,
 } as const satisfies Record<Rarity, number>
 
@@ -80,9 +85,9 @@ function secretSpeciesChanceForRoll(): number {
 
 function shinyChanceForRoll(): number {
   const luck = activeTestLuck()
-  if (luck === 'high') return 0.08
-  if (luck === 'low') return 0.0025
-  return 0.01
+  if (luck === 'high') return 0.12
+  if (luck === 'low') return 0.006
+  return 0.025
 }
 
 function rollRarity(rng: () => number): Rarity {
@@ -146,7 +151,7 @@ export type Roll = {
 function rollFrom(rng: () => number): Roll {
   const rarity = rollRarity(rng)
   const hat = rarity === 'common' ? 'none' : pick(rng, HATS)
-  let species = pick(rng, SPECIES_ROLLABLE)
+  let species: Species = pick(rng, SPECIES_ROLLABLE)
   // 与 rollRarity 独立：极低概率覆盖为隐藏种 voidling（/high /low 在测试模式下调节）
   if (rng() < secretSpeciesChanceForRoll()) species = voidling
   const bones: CompanionBones = {
@@ -164,7 +169,7 @@ function rollFrom(rng: () => number): Roll {
 
 function rollFromForcedRarity(rng: () => number, rarity: Rarity): Roll {
   const hat = rarity === 'common' ? 'none' : pick(rng, HATS)
-  let species = pick(rng, SPECIES_ROLLABLE)
+  let species: Species = pick(rng, SPECIES_ROLLABLE)
   if (rng() < secretSpeciesChanceForRoll()) species = voidling
   const bones: CompanionBones = {
     rarity,
@@ -204,11 +209,43 @@ export function companionUserId(): string {
   return config.oauthAccount?.accountUuid ?? config.userID ?? 'anon'
 }
 
+export function rollPersonality(
+  bones: CompanionBones,
+  inspirationSeed: number,
+): string {
+  const rng = mulberry32(
+    hashString(`${bones.species}:${inspirationSeed}:soul-v1`),
+  )
+  const adj = pick(rng, personalityData.adjectives)
+  const flavor = pick(rng, flavorByRarity[bones.rarity])
+  const quirk = pick(rng, personalityData.quirks)
+  return `${adj}. ${flavor} ${quirk}`.slice(0, 200)
+}
+
+/**
+ * 本地孵化：外形由 roll(userId) 决定；`name` 恒为英文物种 id；性格可覆盖否则随机。
+ */
+export function hatchCompanionSoul(
+  userId: string,
+  personalityOverride?: string,
+): StoredCompanion {
+  const { bones, inspirationSeed } = roll(userId)
+  const trimmed = personalityOverride?.trim() ?? ''
+  const personality = trimmed
+    ? trimmed.slice(0, 200)
+    : rollPersonality(bones, inspirationSeed)
+  return {
+    name: bones.species,
+    personality,
+    hatchedAt: Date.now(),
+  }
+}
+
 export function getCompanion(): Companion | undefined {
   const stored = getGlobalConfig().companion
   if (!stored) return undefined
   const { bones } = roll(companionUserId())
-  return { ...stored, ...bones }
+  return { ...stored, ...bones, name: bones.species }
 }
 
 export function clearRollCache(): void {

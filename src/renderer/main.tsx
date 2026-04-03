@@ -5,25 +5,23 @@ import { setGlobalConfig } from '@buddy/config.js'
 import App from './App'
 import './index.css'
 
-function defaultCompanionConfig(): BuddyGlobalConfig {
+function previewConfig(): BuddyGlobalConfig {
   return {
-    userID: 'buddy-desktop',
-    companion: {
-      name: 'Mochi',
-      personality: 'desktop',
-      hatchedAt: Date.now(),
-    },
+    userID: 'preview-user',
+    companion: undefined,
     companionMuted: false,
   }
 }
 
 async function main() {
   let hatchLocked = false
-  let cfg: BuddyGlobalConfig = defaultCompanionConfig()
+  let hasHatchedCompanion = false
+  let cfg: BuddyGlobalConfig = previewConfig()
   if (window.buddyDesktop?.getProfile) {
     try {
       const p = await window.buddyDesktop.getProfile()
       hatchLocked = p.hatchLocked
+      hasHatchedCompanion = Boolean(p.companion)
       cfg = {
         userID: p.userID,
         companion: p.companion,
@@ -37,7 +35,10 @@ async function main() {
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <App initialHatchLocked={hatchLocked} />
+      <App
+        initialHatchLocked={hatchLocked}
+        initialHasHatchedCompanion={hasHatchedCompanion}
+      />
     </React.StrictMode>,
   )
 }

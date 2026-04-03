@@ -131,7 +131,7 @@ export const SPECIES_ROLLABLE = SPECIES.filter(
 )
 
 /** 在 `SPECIES_ROLLABLE` 结果之上额外命中隐藏种；与稀有度 roll 独立 */
-export const SECRET_SPECIES_CHANCE = 0.0025
+export const SECRET_SPECIES_CHANCE = 0.005
 
 export const EYES = ['·', '✦', '×', '◉', '@', '°', '◇', '▽', '◕'] as const
 export type Eye = (typeof EYES)[number]
@@ -202,6 +202,7 @@ export type CompanionBones = {
   stats: Record<StatName, number>
 }
 
+/** `name` 恒等于 roll 出的英文物种 id（如 `duck`），与 `CompanionBones.species` 一致 */
 export type CompanionSoul = {
   name: string
   personality: string
@@ -214,12 +215,13 @@ export type Companion = CompanionBones &
 
 export type StoredCompanion = CompanionSoul & { hatchedAt: number }
 
+/** 单抽权重之和 100 → Common 约 30%，抬高绿蓝紫橙出率以偏「抽卡」手感 */
 export const RARITY_WEIGHTS = {
-  common: 60,
-  uncommon: 25,
-  rare: 10,
-  epic: 4,
-  legendary: 1,
+  common: 30,
+  uncommon: 33,
+  rare: 24,
+  epic: 10,
+  legendary: 3,
 } as const satisfies Record<Rarity, number>
 
 export const RARITY_STARS = {
@@ -276,6 +278,8 @@ export type BuddyAppState = {
   openclawConfigured?: boolean
   /** 主进程：buddy-bootstrap-pending 已应用后锁定，不可再孵化 */
   hatchLocked?: boolean
+  /** profile 已有 companion（或内存孵化完成），为 false 时仅显示孵化台 */
+  hasHatchedCompanion?: boolean
   /** /c：在 `SHELL_APPEARANCES`（透明昼夜 + 精灵软白/软黑底）间循环 */
   shellAppearance?: ShellAppearance
   /** 自动：`sleep`＝≥15s 无对话且无抚摸。✦ 星星仅在与气泡「在想中」同步的加载阶段显示（见 PetView）。 */

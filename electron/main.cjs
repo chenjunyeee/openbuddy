@@ -28,6 +28,8 @@ const { app, BrowserWindow, screen, Menu, ipcMain } = electron
 if (process.env.BUDDY_DISABLE_GPU === '1') app.disableHardwareAcceleration()
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
+const buddyRoll = require('./buddy-roll.cjs')
 
 const isMac = process.platform === 'darwin'
 const isLinux = process.platform === 'linux'
@@ -92,46 +94,59 @@ function writeProfileDisk(profile) {
   fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2))
 }
 
-function getDefaultProfilePayload() {
-  return {
-    version: 1,
-    userID: 'buddy-desktop',
-    companion: {
-      name: 'Mochi',
-      personality: 'desktop',
-      hatchedAt: Date.now(),
-    },
-    hatchLocked: false,
+function ensureProfileSkeletonOnDisk() {
+  let p = readProfileDisk()
+  if (!p || typeof p !== 'object') {
+    p = { version: 1, userID: crypto.randomUUID(), hatchLocked: false }
+    writeProfileDisk(p)
+    return p
   }
+  let changed = false
+  if (typeof p.userID !== 'string' || !p.userID.trim()) {
+    p = { ...p, version: 1, userID: crypto.randomUUID() }
+    changed = true
+  }
+  if (p.version == null) {
+    p = { ...p, version: 1 }
+    changed = true
+  }
+  if (changed) writeProfileDisk(p)
+  return p
 }
 
-/** 渲染进程 / 无 profile 文件时的占位（不落盘） */
+/** 首次启动仅写 userId；已孵化才有 companion */
 function readProfileForRenderer() {
-  const p = readProfileDisk()
+  const raw = ensureProfileSkeletonOnDisk()
+  const hatchLocked = Boolean(raw.hatchLocked)
+  const userID =
+    typeof raw.userID === 'string' && raw.userID.trim()
+      ? String(raw.userID)
+      : crypto.randomUUID()
+
+  if (userID !== raw.userID) {
+    const merged = { ...raw, userID, version: 1 }
+    writeProfileDisk(merged)
+  }
+
+  const c = raw.companion
   if (
-    p &&
-    typeof p.userID === 'string' &&
-    p.companion &&
-    typeof p.companion.name === 'string' &&
-    typeof p.companion.personality === 'string' &&
-    Number.isFinite(Number(p.companion.hatchedAt))
+    c &&
+    typeof c === 'object' &&
+    typeof c.name === 'string' &&
+    typeof c.personality === 'string' &&
+    Number.isFinite(Number(c.hatchedAt))
   ) {
     return {
-      userID: String(p.userID),
+      userID,
       companion: {
-        name: String(p.companion.name),
-        personality: String(p.companion.personality),
-        hatchedAt: Number(p.companion.hatchedAt),
+        name: String(c.name).trim().toLowerCase(),
+        personality: String(c.personality),
+        hatchedAt: Number(c.hatchedAt),
       },
-      hatchLocked: Boolean(p.hatchLocked),
+      hatchLocked,
     }
   }
-  const d = getDefaultProfilePayload()
-  return {
-    userID: d.userID,
-    companion: d.companion,
-    hatchLocked: false,
-  }
+  return { userID, companion: undefined, hatchLocked }
 }
 
 /**
@@ -167,15 +182,8 @@ function applyBootstrapIfPending() {
     console.error('[buddy-bootstrap] missing openclaw.url / openclaw.token')
     return
   }
-  if (
-    !hatch ||
-    typeof hatch.userID !== 'string' ||
-    typeof hatch.name !== 'string' ||
-    typeof hatch.personality !== 'string'
-  ) {
-    console.error(
-      '[buddy-bootstrap] missing hatch.userID / name / personality',
-    )
+  if (!hatch || typeof hatch.userID !== 'string') {
+    console.error('[buddy-bootstrap] missing hatch.userID')
     return
   }
   const existing = readProfileDisk()
@@ -209,20 +217,21 @@ function applyBootstrapIfPending() {
   }
 
   let userID = String(hatch.userID).trim().slice(0, 128)
-  if (!userID) userID = 'buddy-desktop'
-  const name = String(hatch.name).trim().slice(0, 64)
-  const personality = String(hatch.personality).trim().slice(0, 200)
-  if (!name || !personality) {
-    console.error('[buddy-bootstrap] hatch.name / personality must be non-empty')
-    return
-  }
+  if (!userID) userID = crypto.randomUUID()
+  const persIn =
+    typeof hatch.personality === 'string' ? hatch.personality.trim() : ''
+  const soul = buddyRoll.hatchStoredSoul(userID, persIn || undefined)
   let hatchedAt = Number(hatch.hatchedAt)
-  if (!Number.isFinite(hatchedAt) || hatchedAt <= 0) hatchedAt = Date.now()
+  if (!Number.isFinite(hatchedAt) || hatchedAt <= 0) hatchedAt = soul.hatchedAt
 
   const profileClean = {
     version: 1,
     userID,
-    companion: { name, personality, hatchedAt },
+    companion: {
+      name: soul.name,
+      personality: soul.personality,
+      hatchedAt,
+    },
     hatchLocked: true,
   }
   try {
@@ -552,6 +561,57 @@ app.whenReady().then(() => {
 
   ipcMain.handle('buddy-get-profile', () => readProfileForRenderer())
 
+  ipcMain.handle('buddy-save-profile', (_e, payload) => {
+    try {
+      const cur = readProfileDisk() || ensureProfileSkeletonOnDisk()
+      if (payload?.clearCompanion === true) {
+        const merged = {
+          version: 1,
+          userID:
+            typeof cur.userID === 'string' && cur.userID.trim()
+              ? cur.userID
+              : crypto.randomUUID(),
+          hatchLocked: Boolean(cur.hatchLocked),
+        }
+        writeProfileDisk(merged)
+        return { ok: true }
+      }
+      const c = payload?.companion
+      if (
+        !c ||
+        typeof c !== 'object' ||
+        typeof c.name !== 'string' ||
+        typeof c.personality !== 'string'
+      ) {
+        return { ok: false, error: 'invalid companion' }
+      }
+      const name = String(c.name).trim().toLowerCase()
+      if (!buddyRoll.isValidSpeciesId(name)) {
+        return { ok: false, error: 'invalid species id' }
+      }
+      const merged = {
+        ...cur,
+        version: 1,
+        userID:
+          typeof cur.userID === 'string' && cur.userID.trim()
+            ? cur.userID
+            : crypto.randomUUID(),
+        companion: {
+          name,
+          personality: String(c.personality).trim().slice(0, 200),
+          hatchedAt: Number.isFinite(Number(c.hatchedAt))
+            ? Number(c.hatchedAt)
+            : Date.now(),
+        },
+      }
+      writeProfileDisk(merged)
+      return { ok: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: msg.slice(0, 400) }
+    }
+  })
+
   ipcMain.handle('buddy-get-paths', () => ({
     userData: app.getPath('userData'),
     bootstrapPending: BOOTSTRAP_PENDING,
@@ -594,10 +654,10 @@ app.whenReady().then(() => {
       }
 
       const companionName = String(
-        payload?.companionName ?? 'Mochi',
+        payload?.companionName ?? 'buddy',
       ).slice(0, 64)
       const personality = String(
-        payload?.personality ?? 'desktop',
+        payload?.personality ?? 'A friendly desk pet.',
       ).slice(0, 200)
       const system = buildSystemPrompt(companionName, personality)
 

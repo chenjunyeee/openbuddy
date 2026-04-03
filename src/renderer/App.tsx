@@ -10,6 +10,7 @@ import { getGlobalConfig, setGlobalConfig } from '@buddy/config.js'
 import {
   clearRollCache,
   companionUserId,
+  getCompanion,
   roll,
 } from '@buddy/companion.js'
 import {
@@ -131,6 +132,10 @@ function isSlashRoll(low: string): boolean {
   )
 }
 
+function isSlashReboot(low: string): boolean {
+  return low === '/reboot' || low.startsWith('/reboot ')
+}
+
 /** 「在想中」时输入框仅允许键入本地便民指令的前缀或完整内容 */
 function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
   if (v === '') return true
@@ -156,6 +161,7 @@ function isAllowedPetShortcutDraft(v: string, testMode: boolean): boolean {
     '/rare',
     '/epic',
     '/legendary',
+    '/reboot',
   ]
   for (const full of slashed) {
     if (full.startsWith(v) || v === full) return true
@@ -255,6 +261,7 @@ function AutoPetMood(): null {
 /** 底部：对白输入；睡眠 zzz 时仅隐藏（占位不变），避免窗口缩放导致精灵位移 */
 function ChatDialogPanel(): React.ReactElement {
   const setAppState = useSetAppState()
+  const hasHatchedCompanion = useAppState(s => s.hasHatchedCompanion === true)
   const chatLoading = useAppState(s => s.chatLoading)
   const petMood = useAppState(s => s.petMood)
   const petSoloMode = useAppState(s => s.petSoloMode === true)
@@ -268,8 +275,10 @@ function ChatDialogPanel(): React.ReactElement {
   const bubbleHideAfterBlurRef = useRef(0)
   /** 睡眠 / 仅桌宠：输入区交互关闭，但面板仍占位（visibility:hidden），与睡眠一致、不缩窗 */
   const chatPanelVisible =
+    (hasHatchedCompanion || testMode) &&
     !petSoloMode &&
     (petMood !== 'sleep' ||
+      testMode ||
       typeof openclawGuideStep === 'number' ||
       Boolean(chatLoading))
 
@@ -488,7 +497,52 @@ function ChatDialogPanel(): React.ReactElement {
         ...s,
         testMode: true,
         chatBubble:
-          '测试模式：发 /roll 随机抽外形（不换存档）。/high 提高稀有、隐藏种、异色概率；/low 降低。/test off 退出。',
+          '测试模式：/roll 预览外形；/reboot 清除桌宠并回到与首次启动一致的开蛋界面；/high /low 调节概率；/test off 退出。',
+      }))
+      return
+    }
+
+    if (isSlashReboot(low)) {
+      if (!getGlobalConfig().testMode) {
+        setDraft('')
+        setAppState(s => ({
+          ...s,
+          chatBubble: '仅测试模式可用：先发 /test。',
+        }))
+        return
+      }
+      setDraft('')
+      const save = window.buddyDesktop?.saveProfile
+      if (save) {
+        const r = await save({ clearCompanion: true })
+        if (!r.ok) {
+          setAppState(s => ({
+            ...s,
+            chatBubble: r.error ?? '清除 profile 失败',
+          }))
+          return
+        }
+      }
+      clearRollCache()
+      setGlobalConfig({
+        companion: undefined,
+        testMode: false,
+        testForcedRarity: undefined,
+        testRollNonce: undefined,
+        testLuck: undefined,
+      })
+      setAppState(s => ({
+        ...s,
+        hasHatchedCompanion: false,
+        statPanelOpen: false,
+        testMode: false,
+        petSoloMode: false,
+        petCloudsHidden: false,
+        chatBubble: undefined,
+        chatBubbleIdleHidden: false,
+        openclawGuideStep: undefined,
+        chatLoading: false,
+        petMood: undefined,
       }))
       return
     }
@@ -578,6 +632,15 @@ function ChatDialogPanel(): React.ReactElement {
     if (chatLoading) return
     setDraft('')
 
+    if (!getGlobalConfig().companion) {
+      setAppState(s => ({
+        ...s,
+        chatBubble: '请先完成孵化（点击蛋下方 Hatch）。',
+        chatBubbleIdleHidden: false,
+      }))
+      return
+    }
+
     const ocSlash = parseOpenclawSlash(t)
     if (ocSlash) {
       const saveApi = window.buddyDesktop?.saveOpenclawConfig
@@ -638,7 +701,7 @@ function ChatDialogPanel(): React.ReactElement {
       chatBubbleIdleHidden: false,
     }))
 
-    const soul = getGlobalConfig().companion
+    const buddy = getCompanion()
     const api = window.buddyDesktop?.sendChat
     if (!api) {
       setAppState(s => ({
@@ -654,8 +717,8 @@ function ChatDialogPanel(): React.ReactElement {
 
     const r = await api({
       text: t,
-      companionName: soul?.name ?? 'Mochi',
-      personality: soul?.personality ?? 'desktop',
+      companionName: buddy?.name ?? 'buddy',
+      personality: buddy?.personality ?? 'A friendly desk pet.',
       streamSessionId,
     })
 
@@ -845,6 +908,8 @@ function PetSoloPointerBridge(): null {
 }
 
 function Shell(): React.ReactElement {
+  const setAppState = useSetAppState()
+  const hasHatchedCompanion = useAppState(s => s.hasHatchedCompanion === true)
   const shellAppearance = useAppState(s => s.shellAppearance)
   const statPanelOpen = useAppState(s => s.statPanelOpen === true)
   const petSoloMode = useAppState(s => s.petSoloMode === true)
@@ -852,25 +917,63 @@ function Shell(): React.ReactElement {
   const chatBubbleForFit = useAppState(s => s.chatBubble)
   const chatLoadingForFit = useAppState(s => s.chatLoading)
   const shellRef = useRef<HTMLDivElement>(null)
+
+  /** StrictMode 会重建 store，但 `setGlobalConfig` 里的 companion 不会回滚；与磁盘真值对齐，避免对话/测高与精灵脱节 */
+  useLayoutEffect(() => {
+    setAppState(s => {
+      const hatched = Boolean(getGlobalConfig().companion)
+      if (Boolean(s.hasHatchedCompanion) === hatched) return s
+      return { ...s, hasHatchedCompanion: hatched }
+    })
+  }, [setAppState])
   const resizeRaf = useRef(0)
   /** 与流式 `chatBubble` 同帧多次更新合并为一次测量，减少 buddy-resize IPC */
   const fitFromStateRaf = useRef(0)
   const lastFitRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
   const applyFitRef = useRef<() => void>(() => {})
+  /** `apply()` 内读取：流式阶段防抖，避免每个 delta 都 setBounds */
+  const chatLoadingFitRef = useRef(false)
+  const fitDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+
+  chatLoadingFitRef.current = Boolean(chatLoadingForFit)
 
   useLayoutEffect(() => {
     const el = shellRef.current
     if (!el) return
 
-    const apply = (): void => {
+    const CHAT_FIT_DEBOUNCE_MS = 110
+
+    const flush = (): void => {
+      const root = shellRef.current
       const api = window.buddyDesktop?.resizeToFit
-      if (!api) return
-      const { w, h } = measureShellFitPx(el)
+      if (!root || !api) return
+      const { w, h } = measureShellFitPx(root)
       const { w: lw, h: lh } = lastFitRef.current
       /** 禁用「±3px 跳过」：少涨 1～2px 时以前会一直不调 resize，气泡/尾巴必然裁切 */
       if (w === lw && h === lh) return
       lastFitRef.current = { w, h }
       void api(w, h)
+    }
+
+    const apply = (): void => {
+      const loading = chatLoadingFitRef.current
+      if (loading) {
+        if (fitDebounceTimerRef.current !== undefined) {
+          window.clearTimeout(fitDebounceTimerRef.current)
+        }
+        fitDebounceTimerRef.current = window.setTimeout(() => {
+          fitDebounceTimerRef.current = undefined
+          flush()
+        }, CHAT_FIT_DEBOUNCE_MS)
+        return
+      }
+      if (fitDebounceTimerRef.current !== undefined) {
+        window.clearTimeout(fitDebounceTimerRef.current)
+        fitDebounceTimerRef.current = undefined
+      }
+      flush()
     }
 
     applyFitRef.current = apply
@@ -884,6 +987,10 @@ function Shell(): React.ReactElement {
     return () => {
       ro.disconnect()
       window.cancelAnimationFrame(resizeRaf.current)
+      if (fitDebounceTimerRef.current !== undefined) {
+        window.clearTimeout(fitDebounceTimerRef.current)
+        fitDebounceTimerRef.current = undefined
+      }
     }
   }, [])
 
@@ -906,6 +1013,7 @@ function Shell(): React.ReactElement {
     statPanelOpen,
     petSoloMode,
     shellAppearance,
+    hasHatchedCompanion,
   ])
 
   const shellClass =
@@ -930,13 +1038,16 @@ function Shell(): React.ReactElement {
 
 export default function App({
   initialHatchLocked = false,
+  initialHasHatchedCompanion = false,
 }: {
   initialHatchLocked?: boolean
+  initialHasHatchedCompanion?: boolean
 }): React.ReactElement {
   return (
     <BuddyStateProvider
       initialState={{
         hatchLocked: initialHatchLocked,
+        hasHatchedCompanion: initialHasHatchedCompanion,
         lastConversationActivityAt: Date.now(),
         lastPetAttentionAt: Date.now(),
       }}

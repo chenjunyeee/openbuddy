@@ -41,13 +41,23 @@ declare global {
       }) => Promise<{ ok: boolean; error?: string }>
       getProfile?: () => Promise<{
         userID: string
-        companion: {
+        companion?:
+          | {
+              name: string
+              personality: string
+              hatchedAt: number
+            }
+          | undefined
+        hatchLocked: boolean
+      }>
+      saveProfile?: (payload: {
+        clearCompanion?: boolean
+        companion?: {
           name: string
           personality: string
           hatchedAt: number
         }
-        hatchLocked: boolean
-      }>
+      }) => Promise<{ ok: boolean; error?: string }>
       getPaths?: () => Promise<{
         userData: string
         bootstrapPending: string

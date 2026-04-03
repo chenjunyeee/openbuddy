@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { getCompanion } from '@buddy/companion.js'
+import {
+  companionUserId,
+  getCompanion,
+  hatchCompanionSoul,
+} from '@buddy/companion.js'
+import { setGlobalConfig, getGlobalConfig } from '@buddy/config.js'
 import { renderSpriteWithMeta, spriteFrameCount } from '@buddy/sprites.js'
 import {
   type BuddyAppState,
@@ -42,6 +47,12 @@ export function shouldShowPetSideSlot(s: BuddyAppState): boolean {
 const TICK_MS = 500
 const PET_BURST_MS = 2500
 
+/** 英文名展示：物种 id 首字母大写（存储仍为小写枚举） */
+function speciesLabelEnglish(species: string): string {
+  if (!species) return ''
+  return species.charAt(0).toUpperCase() + species.slice(1)
+}
+
 /** 含眨眼：-1 仅替换 `{E}`；连续两拍便于看清（@500ms/tick ≈1s 闭眼） */
 const IDLE_SEQUENCE = [
   0, 0, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0, 2, 0, 0, 0,
@@ -51,6 +62,13 @@ const IDLE_SEQUENCE = [
 const SLEEP_ZZZ = ['    z      ', '   z z     ', '  Z   z    ']
 /** 与气泡「在想中」同步：仅 `chatLoading` 且尚无流式正文时显示 */
 const THINKING_SPARKLES = [' · ✦ · ✦  ', ' ✦  ·  ✦  ', '  · ✦  ·   ']
+/** 与爱心行同理：睡眠/在想与常态之间不换行数，减轻 buddy-resize 上下抖 */
+const PET_MOOD_ROW_PLACEHOLDER = ' '.repeat(
+  Math.max(
+    ...SLEEP_ZZZ.map(s => s.length),
+    ...THINKING_SPARKLES.map(s => s.length),
+  ),
+)
 
 const H = '♥'
 const PET_HEARTS = [
@@ -63,6 +81,60 @@ const PET_HEARTS = [
 
 /** 与爱心行同宽同高、占位避免摸宠时增删行触发 resize ↔ setBounds 微抖 */
 const PET_HEART_ROW_PLACEHOLDER = ' '.repeat(PET_HEARTS[0]!.length)
+
+/** 蛋破壳 ASCII 帧（定宽，与精灵区锚点一致） */
+const EGG_FRAMES: readonly string[][] = [
+  [
+    '      ██████      ',
+    '    ██░░░░░░██    ',
+    '   ██░░████░░██   ',
+    '   ██░░████░░██   ',
+    '   ██░░░░░░░░██   ',
+    '    ██░░░░░░██    ',
+    '      ██████      ',
+    '                  ',
+  ],
+  [
+    '      ██████      ',
+    '    ██░░░░░░██    ',
+    '   ██░▓████░░██   ',
+    '   ██░░████▓░██   ',
+    '   ██░░░░░░░░██   ',
+    '    ██░░░░░░██    ',
+    '      ██████      ',
+    '                  ',
+  ],
+  [
+    '      ██████      ',
+    '    ██▓░░░░░██    ',
+    '   ██▓░███▓░░██   ',
+    '   ██░░███▓▓░██   ',
+    '   ██░░▓░░░░░██   ',
+    '    ██░░░░░░▓█    ',
+    '      ██████      ',
+    '                  ',
+  ],
+  [
+    '      █▓▓██      ',
+    '    ██▓░░░░▓█    ',
+    '   █▓░░███▓░▓█    ',
+    '   █▓░███▓▓░▓█    ',
+    '   █▓░░▓░░░░▓█    ',
+    '    █▓░░░░░▓▓     ',
+    '      ▀▀▀▀        ',
+    '                  ',
+  ],
+  [
+    '       ░░░         ',
+    '     ░▓▓▓▓▓░       ',
+    '    ░▓░███▓▓░      ',
+    '    ░▓░█▓▓▓▓░      ',
+    '     ░▓░░░░▓░      ',
+    '      ░▓▓▓▓░       ',
+    '       ···          ',
+    '                  ',
+  ],
+]
 
 function PetBubble({
   loading,
@@ -166,6 +238,7 @@ export function PetView(): React.ReactElement {
   const chatLoading = useAppState(s => s.chatLoading)
   const chatBubble = useAppState(s => s.chatBubble)
   const petSoloMode = useAppState(s => s.petSoloMode === true)
+  const hasHatchedCompanion = useAppState(s => s.hasHatchedCompanion === true)
   const bubbleSlotActive = useAppState(hasPetSideSlotContent)
   const bubbleHasChat = useAppState(hasPetBubbleContent)
   const showBubblePaint = useAppState(shouldShowPetSideSlot)
@@ -185,11 +258,45 @@ export function PetView(): React.ReactElement {
   const togglePetSoloMode = useCallback((): void => {
     setAppState(s => ({ ...s, petSoloMode: !s.petSoloMode }))
   }, [setAppState])
+
+  const completeHatch = useCallback(async (): Promise<boolean> => {
+    if (getGlobalConfig().companion) return true
+    try {
+      const soul = hatchCompanionSoul(companionUserId())
+      setGlobalConfig({ companion: soul })
+      const save = window.buddyDesktop?.saveProfile
+      if (save) {
+        const r = await save({ companion: soul })
+        if (!r.ok) {
+          setEggErr((r.error ?? '!').slice(0, 24))
+          setGlobalConfig({ companion: undefined })
+          return false
+        }
+      }
+      setEggErr(null)
+      setAppState(s => ({
+        ...s,
+        hasHatchedCompanion: true,
+        statPanelOpen: true,
+        chatBubbleIdleHidden: false,
+      }))
+      return true
+    } catch {
+      setEggErr('!')
+      return false
+    }
+  }, [setAppState])
+
   const prevChatLoading = useRef(false)
   const replyBurstUntil = useRef(0)
   const appearancePrev = useRef<string | null>(null)
   const [gachaReveal, setGachaReveal] = useState(false)
   const [tick, setTick] = useState(0)
+  const [eggFrame, setEggFrame] = useState(0)
+  const [eggErr, setEggErr] = useState<string | null>(null)
+  const [eggPhase, setEggPhase] = useState<'idle' | 'cracking'>('idle')
+  const eggCrackTimersRef = useRef<{ iv?: number; to?: number }>({})
+  const eggCrackingBusyRef = useRef(false)
 
   useEffect(() => {
     const t = setInterval(() => setTick(x => x + 1), TICK_MS)
@@ -217,30 +324,82 @@ export function PetView(): React.ReactElement {
     })
   }, [setAppState])
 
-  const appearance = useAppState(s => s.shellAppearance)
+  const completeHatchRef = useRef(completeHatch)
+  completeHatchRef.current = completeHatch
+
+  useEffect(() => {
+    return () => {
+      const { iv, to } = eggCrackTimersRef.current
+      if (iv !== undefined) window.clearInterval(iv)
+      if (to !== undefined) window.clearTimeout(to)
+      eggCrackTimersRef.current = {}
+      eggCrackingBusyRef.current = false
+    }
+  }, [])
+
+  /** 回到蛋（含 /reboot）：停破壳动画并重置为可点击 */
+  useEffect(() => {
+    if (getGlobalConfig().companion) return
+    const { iv, to } = eggCrackTimersRef.current
+    if (iv !== undefined) window.clearInterval(iv)
+    if (to !== undefined) window.clearTimeout(to)
+    eggCrackTimersRef.current = {}
+    eggCrackingBusyRef.current = false
+    setEggPhase('idle')
+    setEggFrame(0)
+    setEggErr(null)
+  }, [hasHatchedCompanion])
+
+  const onEggHatchClick = useCallback((): void => {
+    if (getGlobalConfig().companion) return
+    if (eggCrackingBusyRef.current) return
+    eggCrackingBusyRef.current = true
+    setEggErr(null)
+    setEggPhase('cracking')
+    let f = 0
+    setEggFrame(0)
+    const iv = window.setInterval(() => {
+      f++
+      if (f < EGG_FRAMES.length) {
+        setEggFrame(f)
+      } else {
+        window.clearInterval(iv)
+        eggCrackTimersRef.current.iv = undefined
+        const to = window.setTimeout(() => {
+          eggCrackTimersRef.current.to = undefined
+          void completeHatchRef.current().then(ok => {
+            eggCrackingBusyRef.current = false
+            if (!ok) {
+              setEggPhase('idle')
+              setEggFrame(0)
+            }
+          })
+        }, 420)
+        eggCrackTimersRef.current.to = to
+      }
+    }, TICK_MS)
+    eggCrackTimersRef.current.iv = iv
+  }, [])
+
   const darkPalette =
-    appearance === 'transparent-dark' ||
-    appearance === 'sprite-backdrop-dark'
+    shellAppearance === 'transparent-dark' ||
+    shellAppearance === 'sprite-backdrop-dark'
   const spriteBackdropClass =
-    appearance === 'sprite-backdrop-light'
+    shellAppearance === 'sprite-backdrop-light'
       ? 'pet-sprite-stage--backdrop-light'
-      : appearance === 'sprite-backdrop-dark'
+      : shellAppearance === 'sprite-backdrop-dark'
         ? 'pet-sprite-stage--backdrop-dark'
         : ''
   const cloudsHidden = useAppState(s => s.petCloudsHidden === true)
   /** 与种族无关：睡眠由 `petMood`；星星仅在「在想中」阶段。 */
   const petMood = useAppState(s => s.petMood)
   const companion = getCompanion()
-  if (!companion) {
-    return (
-      <div className="pet-muted">
-        …
-      </div>
-    )
-  }
+  const appearanceKey = companion
+    ? companionAppearanceKey(companion)
+    : ''
 
-  const appearanceKey = companionAppearanceKey(companion)
   useEffect(() => {
+    if (!appearanceKey) return
     const first = appearancePrev.current === null
     const changed =
       appearancePrev.current !== null && appearancePrev.current !== appearanceKey
@@ -251,10 +410,108 @@ export function PetView(): React.ReactElement {
     return () => window.clearTimeout(t)
   }, [appearanceKey])
 
+  if (!companion) {
+    const eggInk = darkPalette
+      ? BUDDY_RARITY_RGB_DARK.common
+      : BUDDY_RARITY_RGB_LIGHT.common
+    const fi =
+      eggPhase === 'idle'
+        ? 0
+        : Math.min(eggFrame, EGG_FRAMES.length - 1)
+    const eggLines = EGG_FRAMES[fi]!
+    const eggFinal =
+      eggPhase === 'cracking' && fi >= EGG_FRAMES.length - 1
+    const eggWrapClass = [
+      'pet-sprite-sprite-wrap',
+      'pet-sprite-sprite-wrap--egg',
+      eggFinal ? 'pet-sprite-sprite-wrap--egg-final' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    return (
+      <div className="pet-view">
+        <div className="pet-row">
+          {bubbleSlotActive ? (
+            <div
+              className={
+                showBubblePaint
+                  ? 'pet-bubble-anchor'
+                  : 'pet-bubble-anchor pet-bubble-anchor--concealed'
+              }
+              aria-hidden={!showBubblePaint}
+            >
+              {statPanelOpen ? (
+                <CompanionStatsPanel
+                  shellAppearance={shellAppearance}
+                  onClose={closeStatPanel}
+                />
+              ) : bubbleHasChat ? (
+                <PetBubble
+                  loading={Boolean(chatLoading)}
+                  text={chatBubble}
+                  onClose={dismissChatBubble}
+                />
+              ) : null}
+            </div>
+          ) : null}
+          <div
+            className={
+              spriteBackdropClass
+                ? `pet-sprite-stage ${spriteBackdropClass}`
+                : 'pet-sprite-stage'
+            }
+          >
+            {!cloudsHidden ? <PetSpriteClouds /> : null}
+            <div className={eggWrapClass}>
+              <pre
+                className="sprite-pre sprite-pre--egg"
+                title={
+                  eggPhase === 'idle'
+                    ? '点击蛋孵化（云朵区域仍可拖移窗口）'
+                    : '破壳中…'
+                }
+                aria-label="蛋"
+              >
+                {eggLines.map((line, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 ? '\n' : null}
+                    <span style={{ color: eggInk }}>{line}</span>
+                  </React.Fragment>
+                ))}
+                {'\n'}
+                <span
+                  className="sprite-pre-name"
+                  style={{
+                    color: eggInk,
+                    opacity: eggErr ? 1 : eggPhase === 'idle' ? 0.72 : 0.55,
+                  }}
+                >
+                  {eggErr ??
+                    (eggPhase === 'idle' ? '点击孵化' : ' ··· ')}
+                </span>
+              </pre>
+              {eggPhase === 'idle' ? (
+                <button
+                  type="button"
+                  className="egg-hatch-hit"
+                  onClick={onEggHatchClick}
+                  aria-label="点击孵化"
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const heartInk = darkPalette ? BUDDY_HEART_RGB_DARK : BUDDY_HEART_RGB_LIGHT
-  const rarityInk = darkPalette
-    ? BUDDY_RARITY_RGB_DARK[companion.rarity]
-    : BUDDY_RARITY_RGB_LIGHT[companion.rarity]
+  const rarityInk =
+    (darkPalette
+      ? BUDDY_RARITY_RGB_DARK[companion.rarity]
+      : BUDDY_RARITY_RGB_LIGHT[companion.rarity]) ??
+    (darkPalette ? BUDDY_RARITY_RGB_DARK.common : BUDDY_RARITY_RGB_LIGHT.common)
   const spriteWrapClassNames = [
     'pet-sprite-sprite-wrap',
     gachaReveal ? 'pet-sprite-sprite-wrap--gacha' : '',
@@ -314,12 +571,14 @@ export function PetView(): React.ReactElement {
   )
   const bodyLines = spriteMetaLines
 
-  const moodPrefix: string[] = []
-  if (petMood === 'sleep' && !chatLoading) {
-    moodPrefix.push(SLEEP_ZZZ[tick % SLEEP_ZZZ.length]!)
-  } else if (bubbleThinkingOnly) {
-    moodPrefix.push(THINKING_SPARKLES[tick % THINKING_SPARKLES.length]!)
-  }
+  const moodLineActive =
+    (petMood === 'sleep' && !chatLoading) || bubbleThinkingOnly
+  const moodLineText = moodLineActive
+    ? petMood === 'sleep' && !chatLoading
+      ? SLEEP_ZZZ[tick % SLEEP_ZZZ.length]!
+      : THINKING_SPARKLES[tick % THINKING_SPARKLES.length]!
+    : PET_MOOD_ROW_PLACEHOLDER
+  const moodPrefix: string[] = [moodLineText]
 
   const spriteLines = [...moodPrefix, heartLineText, ...bodyLines]
   const bodyStartIdx = moodPrefix.length + 1
@@ -396,9 +655,11 @@ export function PetView(): React.ReactElement {
                               opacity:
                                 isHeartRow && !petting
                                   ? 0
-                                  : isMoodRow
-                                    ? 0.92
-                                    : 1,
+                                  : isMoodRow && !moodLineActive
+                                    ? 0
+                                    : isMoodRow
+                                      ? 0.92
+                                      : 1,
                             }
                       }
                     >
@@ -412,7 +673,7 @@ export function PetView(): React.ReactElement {
                 className="sprite-pre-name"
                 style={{ color: rarityInk }}
               >
-                {companion.name}
+                {speciesLabelEnglish(companion.species)}
               </span>
             </pre>
             <button

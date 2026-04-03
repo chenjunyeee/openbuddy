@@ -209,6 +209,34 @@ body {
   -webkit-app-region: drag;
 }
 
+/* 蛋阶段：精灵块不接管拖窗，避免挡住点击孵化；拖移用上方云朵带 */
+.pet-sprite-sprite-wrap--egg {
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+.sprite-pre.sprite-pre--egg {
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+.sprite-pre.sprite-pre--egg * {
+  -webkit-app-region: no-drag;
+}
+
+.egg-hatch-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  background: transparent;
+}
+
 /* 精灵包层右下：极小块，稀有度描边/填色，不占排版、不撑开舞台 */
 .pet-sprite-sprite-wrap .pet-solo-pip {
   position: absolute;
@@ -402,6 +430,29 @@ body {
 
 .pet-sprite-sprite-wrap--gacha {
   animation: pet-gacha-pop 1s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+
+@keyframes pet-egg-final-jitter {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  20% {
+    transform: translate3d(-1px, 0, 0) rotate(-0.6deg);
+  }
+  40% {
+    transform: translate3d(2px, 1px, 0) rotate(0.4deg);
+  }
+  60% {
+    transform: translate3d(-2px, 0, 0) rotate(-0.35deg);
+  }
+  80% {
+    transform: translate3d(1px, -1px, 0) rotate(0.2deg);
+  }
+}
+
+.pet-sprite-sprite-wrap--egg-final {
+  animation: pet-egg-final-jitter 0.38s ease-in-out infinite;
 }
 
 /* Epic / Legendary：仅精灵身体 ASCII 行极淡同色晕（无整身 filter、无额外 UI） */

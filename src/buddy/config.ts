@@ -32,5 +32,5 @@ export function setGlobalConfig(patch: Partial<BuddyGlobalConfig>): void {
 }
 
 export function resetConfig(): void {
-  config = { userID: 'demo-user', companionMuted: false }
+  config = { userID: 'demo-user', companion: undefined, companionMuted: false }
 }

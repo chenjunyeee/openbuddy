@@ -1,7 +1,7 @@
 # OpenClaw 执行手册（精简版）：跑通 openbuddy 桌宠 + 本机对话
 
 > **读者**：本机 OpenClaw / 可跑 shell 的代理。  
-> **目标**：独立 Agent + 固定工作区 → 与用户对齐**显示名与性格** → 检出 [openbuddy](https://github.com/chenjunyeee/openbuddy) → 构建 → 写 `buddy-bootstrap-pending.json` → **用 Electron 启动**，与已运行网关聊天。  
+> **目标**：独立 Agent + 固定工作区 → 与用户对齐**性格（可选）**；**显示名为英文物种 id**，由 `userID` 与 buddy roll 决定 → 检出 [openbuddy](https://github.com/chenjunyeee/openbuddy) → 构建 → 写 `buddy-bootstrap-pending.json` → **用 Electron 启动**，与已运行网关聊天。  
 > **pending 字段详解**：[openclaw-bootstrap.md](./openclaw-bootstrap.md)。
 
 ---
@@ -12,7 +12,7 @@
 |----|--------|
 | 1 | **建独立 Agent**，专用「桌宠 / openbuddy」；Shell / Tools / Soul **同一套 `$REPO_ROOT` 绝对路径**（可设 `OPENBUDDY_REPO_ROOT`）。 |
 | 2 | **划定工作区目录**；下文 **`$REPO_ROOT`** = 检出后含 `package.json`、`electron/`、`src/` 的仓库根。 |
-| 3 | **向用户确认桌宠**：只要 **`hatch.name`**、**`personality`**（见下文约定）。**不要问 userID**：由代理 **现场随机 UUID**（或 `crypto.randomUUID()`），**勿**向用户索要。用户未说清名/性格前 **不 clone、不 npm**。 |
+| 3 | **向用户确认性格（可选）**：一句 **`personality`** 英文要点即可；未说明则由应用随机。**不要问 userID**：由代理 **现场随机 UUID**（或 `crypto.randomUUID()`），**勿**向用户索要。**不要收集显示名**：物种即英文名，由 roll 固定。用户未准备好前 **不 clone、不 npm**。 |
 | 4 | 在工作区根 **`git clone`** openbuddy（空目录可 `git clone … .`）。 |
 | 5 | `npm ci` → `npm run build`（无 lock 用 `npm install`）。 |
 | 6 | **`./node_modules/.bin/electron . --buddy-print-paths`** → 记下 JSON 里的 **`bootstrapPending`**、**`userData`**（见 §3）。 |
@@ -28,9 +28,9 @@
 
 ## 二、Agent 约定（问用户 vs 自动生成）
 
-- **`hatch.name`**：须用户指定或确认；禁止仅为跑通默认 `buddy` / `test`。未答 → **先问再写** pending。用户说「随便」→ 可代选，**回显**最终名。  
-- **`personality`**：优先用户原话；无则一句短确认，勿自写长篇人设。  
-- **`hatch.userID`**：**不向用户提问**。代理生成 **UUID**（例：`550e8400-e29b-41d4-a716-446655440000`）；同一字符串在本版本 buddy 算法下外形固定。**勿在日志/录屏里泄露 Token**；`userID` 可记在代理侧便于排障。
+- **显示名**：**不向用户索取**。pending 不写 `hatch.name`；应用内 `companion.name` 恒为英文物种 id（`duck`、`voidling` 等），由 **`hatch.userID`** 与 buddy 算法确定。  
+- **`personality`**：可选；优先用户原话（英文一句为佳）。未提供则应用在消费 pending 时按同一 `userID` 本地随机生成。  
+- **`hatch.userID`**：**不向用户提问**。代理生成 **UUID**（例：`550e8400-e29b-41d4-a716-446655440000`）；同一字符串在本版本 buddy 算法下外形固定。**勿在日志/录屏里泄露 Token**；`userID` 可记在代理侧便于排障。  
 
 ---
 
@@ -70,7 +70,7 @@ npm run build
 
 ## 五、写 pending 与启动
 
-**变量**：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、**`BUDDY_HATCH_USER_ID`**（代理随机 UUID）、**`BUDDY_DISPLAY_NAME`**、**`BUDDY_PERSONALITY`**（均与用户约定一致）。
+**变量**：`OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、**`BUDDY_HATCH_USER_ID`**（代理随机 UUID）、可选 **`BUDDY_PERSONALITY`**（可空，空则应用随机）。
 
 ```bash
 PENDING="<上一步 JSON 的 bootstrapPending 绝对路径>"
@@ -84,7 +84,6 @@ cat > "$PENDING" <<EOF
   },
   "hatch": {
     "userID": "${BUDDY_HATCH_USER_ID}",
-    "name": "${BUDDY_DISPLAY_NAME}",
     "personality": "${BUDDY_PERSONALITY}"
   }
 }
@@ -102,7 +101,7 @@ npm run start:dist
 
 ## 六、验收
 
-- **userData 内**：有 `buddy-openclaw.json`（url/token）；`buddy-profile.json` 存在且 **`hatchLocked === true`**，`companion.name` 为用户认可名；**无** `buddy-bootstrap-pending.json`；有 `buddy-bootstrap-applied.json`。  
+- **userData 内**：有 `buddy-openclaw.json`（url/token）；`buddy-profile.json` 存在且 **`hatchLocked === true`**，`companion.name` 为**英文物种 id**（与 roll(`userID`) 一致）；**无** `buddy-bootstrap-pending.json`；有 `buddy-bootstrap-applied.json`。  
 - **应用**：能发普通文本并经网关回复。  
 - 无 pending 可走应用内 **`/openclaw`**；本手册以一次 pending 免手动为目标。
 
@@ -130,8 +129,7 @@ npm run start:dist
 export REPO_ROOT="/path/to/agent-workspace"
 export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
 export OPENCLAW_GATEWAY_TOKEN="…"
-export BUDDY_DISPLAY_NAME="…"      # 用户确认
-export BUDDY_PERSONALITY="…"      # 用户确认
+export BUDDY_PERSONALITY="…"      # 可选；空则应用随机
 export BUDDY_HATCH_USER_ID="$(node -e "console.log(require('crypto').randomUUID())")"
 
 # git clone …
@@ -151,7 +149,6 @@ cat > "$PENDING" <<EOF
   },
   "hatch": {
     "userID": "${BUDDY_HATCH_USER_ID}",
-    "name": "${BUDDY_DISPLAY_NAME}",
     "personality": "${BUDDY_PERSONALITY}"
   }
 }

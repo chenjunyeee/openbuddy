@@ -6,8 +6,8 @@
 
 1. 安装并启动 buddy-desktop  
 2. 写入 **OpenClaw 网关 URL + Token**（与同目录下手动 `/openclaw` 等价）  
-3. **孵化**：固定 `userID`、自定义名字与性格、`hatchLocked` 锁定（与随机换宠 `/p` 关闭后的产品假设一致）  
-4. 重启应用后桌宠外形由 `userID` 确定性推导，可直接对话  
+3. **孵化**：固定 `userID`、写入性格（可缺省则由应用随机）、`hatchLocked` 锁定；**显示名为英文物种 id**（由 `userID` 与 buddy roll 算法决定，**非**用户在 pending 里起名）  
+4. 重启应用后桌宠外形与 `companion.name`（= 物种）由 `userID` 确定性推导，可直接对话  
 
 ---
 
@@ -59,8 +59,7 @@ npm install
   },
   "hatch": {
     "userID": "openclaw-hatch-唯一稳定字符串",
-    "name": "桌宠显示名",
-    "personality": "性格要点，传给系统提示",
+    "personality": "性格要点，传给系统提示（英文一句为佳）；可省略则由应用随机生成",
     "hatchedAt": 1743465600000
   }
 }
@@ -71,9 +70,10 @@ npm install
 | `openclaw.url` | 是 | 网关 Base URL；无协议时可由应用补 `http://`，建议写全。 |
 | `openclaw.token` | 是 | 与当前 OpenClaw 网关认证方式一致。 |
 | `hatch.userID` | 是 | **永久绑定外形**；同一字符串在同一版本 buddy 算法下种族/稀有度等固定。请使用 UUID 或项目级唯一 id。 |
-| `hatch.name` | 是 | 显示名称，≤64 字符（应用内会截断）。 |
-| `hatch.personality` | 是 | 性格描述，≤200 字符。 |
+| `hatch.personality` | 否 | 性格描述，≤200 字符；缺省时应用按同一 `userID` 本地随机英文一句。 |
 | `hatch.hatchedAt` | 否 | Unix 毫秒时间戳；缺省则使用应用消费时的当前时间。 |
+
+> **`hatch.name` 已废弃**：profile 中 `companion.name` 恒为 roll 得到的**英文物种 id**（如 `duck`、`voidling`），与用户在 pending 里填名无关。旧 pending 若仍含 `name`，应用将忽略该字段。  
 
 ### 2.2 幂等与冲突
 
@@ -98,7 +98,7 @@ export PATHS_JSON="$(./node_modules/.bin/electron . --buddy-print-paths)"
 PENDING="$(node -e 'console.log(JSON.parse(process.env.PATHS_JSON).bootstrapPending)')"
 
 # 3) 写入 pending（由 OpenClaw 替换环境变量）
-#    OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN / BUDDY_HATCH_USER_ID / BUDDY_DISPLAY_NAME / BUDDY_PERSONALITY
+#    OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN / BUDDY_HATCH_USER_ID / BUDDY_PERSONALITY（性格可空）
 cat > "$PENDING" <<EOF
 {
   "version": 1,
@@ -108,7 +108,6 @@ cat > "$PENDING" <<EOF
   },
   "hatch": {
     "userID": "${BUDDY_HATCH_USER_ID}",
-    "name": "${BUDDY_DISPLAY_NAME}",
     "personality": "${BUDDY_PERSONALITY}"
   }
 }
